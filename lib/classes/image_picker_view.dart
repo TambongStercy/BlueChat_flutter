@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:blue_chat_v1/classes/photo_provider.dart';
+import 'package:photo_manager_image_provider/photo_manager_image_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:photo_manager/photo_manager.dart';
 

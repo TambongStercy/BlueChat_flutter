@@ -35,40 +35,41 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.2
-  keyboard_emoji_picker: ^1.0.1
-  emoji_picker_flutter: ^1.6.1
-  shared_preferences: ^2.1.2
-  provider: ^6.0.5
-  camera: ^0.10.5+2
-  audioplayers: ^4.1.0
-  path_provider: ^2.0.15
-  permission_handler: ^10.4.1
-  video_player: ^2.7.0
-  chewie: ^1.7.0
-  photo_view: ^0.14.0
-  flutter_svg: ^2.0.7
-  flutter_sound: ^9.2.13
-  image_picker: ^1.0.1
-  image_cropper: ^4.0.1
-  file_picker: ^5.3.3
+  keyboard_emoji_picker: ^1.0.3
+  emoji_picker_flutter: ^2.2.0
+  shared_preferences: ^2.2.3
+  provider: ^6.1.2
+  camera: ^0.11.0+1
+  audioplayers: ^6.0.0
+  path_provider: ^2.1.3
+  permission_handler: ^11.3.1
+  video_player: ^2.9.1
+  chewie: ^1.8.1
+  photo_view: ^0.15.0
+  flutter_svg: ^2.0.10+1
+  flutter_sound: ^9.7.2
+  image_picker: ^1.1.2
+  image_cropper: ^7.1.0
+  file_picker: ^8.0.6
   open_file: ^3.3.2
-  mime: ^1.0.4
-  # video_trimmer: ^2.1.0
-  photo_manager: ^2.7.0
-  # sqflite: ^2.3.0
+  mime: ^1.0.5
+  photo_manager: ^3.2.1
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   scrollable_positioned_list: ^0.3.8
-  syncfusion_flutter_pdfviewer: ^20.4.54
+  syncfusion_flutter_pdfviewer: ^26.1.42
   flutter_statusbarcolor_ns: ^0.5.0
-  share_plus: ^7.1.0
-  socket_io_client: ^2.0.3+1
-  google_fonts: ^4.0.4
+  share_plus: ^9.0.0
+  socket_io_client: ^3.0.0-beta.2
+  google_fonts: ^6.2.1
   animated_splash_screen: ^1.3.0
-  http: ^0.13.6
-  fluttertoast: ^8.2.2
-  dio: ^5.3.2
-  vibration: ^1.8.2
+  http: ^1.2.1
+  fluttertoast: ^8.2.6
+  dio: ^5.5.0+1
+  vibration: ^1.9.0
+  photo_manager_image_provider: ^2.1.1
+  # video_trimmer: ^2.1.0
+  # sqflite: ^2.3.0
   # flutter_pdfview: ^1.3.1
 
 dev_dependencies:

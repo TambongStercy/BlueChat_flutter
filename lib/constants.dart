@@ -20,7 +20,7 @@ import 'package:http/http.dart' as http;
 import 'package:socket_io_client/socket_io_client.dart' as IO;
 
 const kServerURL =
-    'http://192.168.225.174:3000'; //type ipConfig in cmd to see pc's ip address
+    'http://192.168.43.191:3000'; //type ipConfig in cmd to see pc's ip address
 // const kServerURL = 'http://10.0.2.2:3000'; //for emulators only
 
 late Directory kAppDirectory;
@@ -292,11 +292,13 @@ class SocketIo extends ChangeNotifier {
 
     _socket.onConnect((_) {
       print('connected');
-      Provider.of<SocketIo>(context, listen: false);
       initGeneralListeners();
     });
 
-    _socket.onDisconnect((_) => print('Socket server disconnected'));
+    _socket.onDisconnect((_) {
+      // disconnect();
+      print('Socket server disconnected');
+    });
     _socket.onConnectError((err) => print(err));
     _socket.onError((err) => print(err));
 
@@ -536,13 +538,15 @@ class SocketIo extends ChangeNotifier {
       _socket.on('message', (data) async {
         final jsonMessage = data[0];
         final senderID = data[1];
+
         print('jsonMessage: $jsonMessage');
         print('bluredFrame: ${jsonMessage['bluredFrame']}');
         print('senderID: $senderID');
 
         final message = MessageModel.fromJson(jsonMessage, context);
         final updaters = Provider.of<Updater>(context, listen: false).updaters;
-        final downloadProvider = Provider.of<DownloadProvider>(context, listen: false);
+        final downloadProvider =
+            Provider.of<DownloadProvider>(context, listen: false);
 
         final type = message.type;
 
@@ -566,7 +570,7 @@ class SocketIo extends ChangeNotifier {
             updatePage!();
           }
           return;
-        }else{
+        } else {
           final file = File(message.filePath!);
           final size = message.size;
           if ((!file.existsSync() || file.lengthSync() < size!)) {
@@ -631,7 +635,7 @@ class SocketIo extends ChangeNotifier {
   }
 
   void disconnect() {
-    _socket.dispose();
+    _socket.disconnect();
   }
 
   void messageRecieved(String senderID, String msgID) {
@@ -1047,7 +1051,7 @@ String getMobilePath(String serverPath) {
     return serverPath;
   }
 
-  if(!serverPath.startsWith('/')){
+  if (!serverPath.startsWith('/')) {
     serverPath = '/$serverPath';
   }
 

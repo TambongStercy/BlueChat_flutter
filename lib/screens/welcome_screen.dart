@@ -1,10 +1,10 @@
-import 'package:blue_chat_v1/src/pages/splash_screen.dart';
+// import 'package:blue_chat_v1/src/pages/splash_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:blue_chat_v1/components/auth_button.dart';
 import 'package:blue_chat_v1/constants.dart';
 import 'package:blue_chat_v1/screens/login_screen.dart';
 import 'package:blue_chat_v1/screens/registration_screen.dart';
-import 'package:flutter/services.dart';
+// import 'package:flutter/services.dart';
 import 'package:flutter_statusbarcolor_ns/flutter_statusbarcolor_ns.dart';
 
 class WelcomeScreen extends StatefulWidget {

@@ -1,5 +1,5 @@
 // import 'package:blue_chat_v1/classes/chat_hive_box.dart';
-import 'package:blue_chat_v1/classes/user_hive_box.dart';
+// import 'package:blue_chat_v1/classes/user_hive_box.dart';
 import 'package:blue_chat_v1/components/my_emoji_picker.dart';
 // import 'package:blue_chat_v1/screens/chat_screen.dart';
 import 'package:flutter/material.dart';

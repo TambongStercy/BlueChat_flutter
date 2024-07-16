@@ -4,7 +4,7 @@
 // import 'package:chatapp/Model/ChatModel.dart';
 import 'package:blue_chat_v1/classes/chat.dart';
 import 'package:blue_chat_v1/classes/chat_hive_box.dart';
-import 'package:blue_chat_v1/classes/user_hive_box.dart';
+// import 'package:blue_chat_v1/classes/user_hive_box.dart';
 import 'package:blue_chat_v1/components/search_field.dart';
 import 'package:blue_chat_v1/constants.dart';
 import 'package:blue_chat_v1/screens/newgroup_info.dart';

@@ -8,7 +8,7 @@ import 'package:blue_chat_v1/classes/levels.dart';
 // import 'package:blue_chat_v1/classes/message.dart';
 import 'package:blue_chat_v1/classes/user_hive_box.dart';
 import 'package:blue_chat_v1/constants.dart';
-import 'package:blue_chat_v1/screens/chat_screen.dart';
+// import 'package:blue_chat_v1/screens/chat_screen.dart';
 import 'package:blue_chat_v1/screens/chats.dart';
 import 'package:blue_chat_v1/screens/pdf_reader.dart';
 import 'package:blue_chat_v1/screens/pp_uploading.dart';

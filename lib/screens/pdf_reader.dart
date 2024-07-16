@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:blue_chat_v1/api_call.dart';
 import 'package:blue_chat_v1/classes/levels.dart';
-import 'package:blue_chat_v1/components/course_tile.dart';
+// import 'package:blue_chat_v1/components/course_tile.dart';
 import 'package:blue_chat_v1/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';

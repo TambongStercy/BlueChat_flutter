@@ -13,7 +13,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'dart:async';
 
 import 'package:provider/provider.dart';
-import 'package:vibration/vibration.dart';
+// import 'package:vibration/vibration.dart';
 
 class BottomTextField extends StatefulWidget {
   BottomTextField({
