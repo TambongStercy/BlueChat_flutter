@@ -5,8 +5,9 @@ import 'dart:io';
 import 'package:blue_chat_v1/api_call.dart';
 import 'package:blue_chat_v1/classes/user_hive_box.dart';
 import 'package:blue_chat_v1/constants.dart';
-  import 'package:blue_chat_v1/screens/chats.dart';
-  import 'package:file_picker/file_picker.dart  ';
+import 'package:blue_chat_v1/screens/chats.dart';
+import 'package:blue_chat_v1/utils.dart';
+import 'package:file_picker/file_picker.dart  ';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -61,8 +62,10 @@ class _PpUploadState extends State<PpUpload> {
                   child: InkWell(
                     onTap: () async {
                       try {
+                        // final result = await FilePicker.platform.pickFiles();
                         final result = await FilePicker.platform.pickFiles(
-                          type: FileType.image,
+                          type: FileType.custom,
+                          allowedExtensions: ['jpg', 'png'],
                         );
 
                         if (result == null) return;
@@ -82,9 +85,10 @@ class _PpUploadState extends State<PpUpload> {
                         // ignore: use_build_context_synchronously
                         await uploadPP(context: context, path: mobilePath);
 
-                        userProfilePicturePath = mobilePath;
-
-                      } on Exception catch (e) {
+                        setState(() {
+                          userProfilePicturePath = mobilePath;
+                        });
+                      } catch (e) {
                         print(e);
                         setState(() {
                           waiting = false;
@@ -121,10 +125,8 @@ class _PpUploadState extends State<PpUpload> {
                   ),
                 ),
                 onPressed: () async {
-                  Navigator.pushNamed(
-                    context,
-                    ChatsScreen.id,
-                  );
+                  // ignore: use_build_context_synchronously
+                  popUntilAndPush(context, ChatsScreen.id);
                 },
               ),
             ),

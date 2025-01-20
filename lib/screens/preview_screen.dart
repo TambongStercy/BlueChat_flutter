@@ -158,13 +158,14 @@ class _PreviewScreenState extends State<PreviewScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        backgroundColor: Color.fromARGB(255, 26, 26, 27),
+        backgroundColor: Colors.transparent,
         actions: isImage(paths[_currentIndex])
             ? [
                 IconButton(
                   icon: const Icon(
                     Icons.crop_rotate,
                     size: 27,
+                    color: Colors.white,
                   ),
                   onPressed: () async {
                     final croppedFile = await ImageCropper().cropImage(

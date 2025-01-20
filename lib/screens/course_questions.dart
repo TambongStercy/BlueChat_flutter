@@ -1,5 +1,4 @@
 import 'package:blue_chat_v1/classes/levels.dart';
-import 'package:blue_chat_v1/common/utils/colors.dart';
 import 'package:blue_chat_v1/components/course_tile.dart';
 import 'package:blue_chat_v1/screens/pdf_reader.dart';
 import 'package:flutter/material.dart';

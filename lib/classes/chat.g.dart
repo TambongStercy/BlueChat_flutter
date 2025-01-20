@@ -31,13 +31,14 @@ class ChatAdapter extends TypeAdapter<Chat> {
       onlyAdmins: fields[11] as bool?,
       adminsId: (fields[12] as List?)?.cast<String>(),
       isAsearch: fields[13] as bool?,
+      avatarBuffer: fields[15] as String?,
     )..isTyping = fields[14] as bool?;
   }
 
   @override
   void write(BinaryWriter writer, Chat obj) {
     writer
-      ..writeByte(15)
+      ..writeByte(16)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -67,7 +68,9 @@ class ChatAdapter extends TypeAdapter<Chat> {
       ..writeByte(13)
       ..write(obj.isAsearch)
       ..writeByte(14)
-      ..write(obj.isTyping);
+      ..write(obj.isTyping)
+      ..writeByte(15)
+      ..write(obj.avatarBuffer);
   }
 
   @override

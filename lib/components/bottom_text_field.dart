@@ -45,7 +45,6 @@ class BottomTextField extends StatefulWidget {
 
 class _BottomTextFieldState extends State<BottomTextField>
     with TickerProviderStateMixin {
-
   AudioPlayer audioStart = AudioPlayer();
   AudioPlayer audioCancel = AudioPlayer();
   AudioPlayer audioStop = AudioPlayer();
@@ -78,7 +77,7 @@ class _BottomTextFieldState extends State<BottomTextField>
   Animation? _micButtonAnimation;
   StreamSubscription<RecordingDisposition>? recorderProgressSubscription;
   final Duration duration = const Duration(milliseconds: 500);
-  final recorder = FlutterSoundRecorder();
+  FlutterSoundRecorder recorder = FlutterSoundRecorder();
   List<double> decibelValues = [];
 
   Future<bool> getMic() async {
@@ -115,8 +114,9 @@ class _BottomTextFieldState extends State<BottomTextField>
   void startRecording() async {
     if (await getMic() && await getStorage()) {
       decibelValues.length = 0;
-      await recorder.openRecorder();
-      await recorder.setSubscriptionDuration(const Duration(milliseconds: 100));
+      decibelTimer =
+          Timer.periodic(const Duration(milliseconds: 100), decibelListener);
+      timeElapsed = 0;
 
       recorderProgressSubscription = recorder.onProgress!.listen((event) {
         setState(() {
@@ -124,9 +124,6 @@ class _BottomTextFieldState extends State<BottomTextField>
           timeElapsed = event.duration.inSeconds;
         });
       });
-
-      decibelTimer =
-          Timer.periodic(const Duration(milliseconds: 100), decibelListener);
 
       String fileName =
           'AUD_${DateTime.now().toString().replaceAll('-', '_').replaceAll(':', '_')}.aac';
@@ -143,6 +140,7 @@ class _BottomTextFieldState extends State<BottomTextField>
 
   void resumeRecording() async {
     await recorder.resumeRecorder();
+    recorderProgressSubscription?.resume();
     decibelTimer =
         Timer.periodic(const Duration(milliseconds: 100), decibelListener);
     setState(() {});
@@ -166,9 +164,13 @@ class _BottomTextFieldState extends State<BottomTextField>
 
   void cancelRecording() async {
     recorderProgressSubscription?.cancel();
-    await recorder.closeRecorder();
+
+    await recorder.stopRecorder();
     decibelValues.length = 0;
     decibelTimer?.cancel();
+
+    setState(() {});
+    print('canceling recording');
   }
 
   void stopRecording() async {
@@ -195,7 +197,8 @@ class _BottomTextFieldState extends State<BottomTextField>
 
     url = newUrl;
     print('Saved audio files successfully at $newUrl');
-    await recorder.closeRecorder();
+    // await recorder.closeRecorder();
+    print('Saved2 audio files successfully at $newUrl');
 
     decibelValues.length = 0;
     decibelTimer!.cancel();
@@ -211,6 +214,7 @@ class _BottomTextFieldState extends State<BottomTextField>
   @override
   void initState() {
     initAnimations();
+    initRecorder();
 
     audioStart.setReleaseMode(ReleaseMode.stop);
     audioCancel.setReleaseMode(ReleaseMode.stop);
@@ -221,6 +225,11 @@ class _BottomTextFieldState extends State<BottomTextField>
     audioStop.setSourceAsset('audio/stop.mp3');
 
     super.initState();
+  }
+
+  void initRecorder() async {
+    await recorder.openRecorder();
+    await recorder.setSubscriptionDuration(const Duration(milliseconds: 100));
   }
 
   void initAnimations() {
@@ -344,6 +353,10 @@ class _BottomTextFieldState extends State<BottomTextField>
   }
 
   void micLongPressUpdateHandler(newDx, newDy) {
+    if (!_micAccess || !_isRecording || _isCanceling) {
+      return;
+    }
+
     setState(() {
       if (!_isLockedRecording) {
         //Horizontal movement handleing (X-axis)
@@ -379,6 +392,10 @@ class _BottomTextFieldState extends State<BottomTextField>
   }
 
   Future<void> micLongPressStartHandler() async {
+    if (!_micAccess) {
+      if (!await getMic()) return;
+    }
+
     if (_isRecording) {
       return;
     }
@@ -393,6 +410,10 @@ class _BottomTextFieldState extends State<BottomTextField>
   }
 
   Future<void> micLongPressEndHandler() async {
+    if (!_micAccess || _isCanceling) {
+      return;
+    }
+
     await HapticFeedback.vibrate();
 
     //if we are recording in longPress
@@ -422,20 +443,20 @@ class _BottomTextFieldState extends State<BottomTextField>
   }
 
   void cancelingAnimationHandler() {
-    _animationController!.removeListener(update);
-    _animationController1!.removeListener(update);
-    _animationController2!.removeListener(update);
-    _animationController3!.removeListener(update);
-    _animationController4!.removeListener(update);
+    _animationController?.removeListener(update);
+    _animationController1?.removeListener(update);
+    _animationController2?.removeListener(update);
+    _animationController3?.removeListener(update);
+    _animationController4?.removeListener(update);
     audioCancel.resume();
-    _animationController!.reset();
-    _animationController3!.reverse();
-    _animationController4!.forward(); //X position of mic of deletion
-    _animationController2!.forward(); //rotation of mic of deletion\
-    _animationController1!.forward(); //Y position of mic of deletion
+    _animationController?.reset();
+    _animationController3?.reverse();
+    _animationController4?.forward(); //X position of mic of deletion
+    _animationController2?.forward(); //rotation of mic of deletion\
+    _animationController1?.forward(); //Y position of mic of deletion
     setState(() {
       decibelValues.length = 0;
-      decibelTimer!.cancel();
+      decibelTimer?.cancel();
       cancelRecording();
       vM = false;
       hM = false;
@@ -550,7 +571,7 @@ class _BottomTextFieldState extends State<BottomTextField>
                               },
                               decoration: InputDecoration(
                                 border: InputBorder.none,
-                                hintText: 'Type a message',
+                                hintText: 'Message',
                                 hintStyle: const TextStyle(color: Colors.grey),
                                 prefixIcon: !_isCanceling
                                     ? IconButton(
@@ -686,16 +707,18 @@ class _BottomTextFieldState extends State<BottomTextField>
                                         height: 150.0 + dy,
                                         width: 50.0,
                                         decoration: BoxDecoration(
-                                            boxShadow: List.filled(
-                                                1,
-                                                const BoxShadow(
-                                                    blurRadius: 1.0,
-                                                    spreadRadius: 0.0,
-                                                    blurStyle:
-                                                        BlurStyle.inner)),
-                                            color: Colors.white,
-                                            borderRadius:
-                                                BorderRadius.circular(25.0)),
+                                          boxShadow: List.filled(
+                                            1,
+                                            const BoxShadow(
+                                              blurRadius: 1.0,
+                                              spreadRadius: 0.0,
+                                              blurStyle: BlurStyle.inner,
+                                            ),
+                                          ),
+                                          color: Colors.white,
+                                          borderRadius:
+                                              BorderRadius.circular(25.0),
+                                        ),
                                         child: Transform.translate(
                                           offset: const Offset(15, 15),
                                           child: Stack(
@@ -715,10 +738,10 @@ class _BottomTextFieldState extends State<BottomTextField>
                                                         width: 45.0,
                                                         colorFilter:
                                                             const ColorFilter
-                                                                    .mode(
-                                                                Colors.grey,
-                                                                BlendMode
-                                                                    .srcIn),
+                                                                .mode(
+                                                          Colors.grey,
+                                                          BlendMode.srcIn,
+                                                        ),
                                                         // semanticsLabel: 'A red up arrow'
                                                       ),
                                                     ),
@@ -778,13 +801,16 @@ class _BottomTextFieldState extends State<BottomTextField>
                                         },
                                       )
                                     : GestureDetector(
-                                        onLongPressStart:
-                                            (LongPressStartDetails details) {
+                                        onLongPressStart: (LongPressStartDetails
+                                            details) async {
+                                          print('onLongPressStart');
+
                                           micLongPressStartHandler();
                                         },
                                         onLongPressMoveUpdate:
                                             (LongPressMoveUpdateDetails
                                                 details) {
+                                          print('onLongPressMoveUpdate');
                                           final newDx =
                                               details.offsetFromOrigin.dx;
                                           final newDy =
@@ -793,26 +819,12 @@ class _BottomTextFieldState extends State<BottomTextField>
                                               newDx, newDy);
                                         },
                                         onLongPressEnd: (details) {
-                                          micLongPressEndHandler();
-                                        },
-                                        onPanStart: (details) {
-                                          micLongPressStartHandler();
-                                        },
-                                        onPanUpdate:
-                                            (DragUpdateDetails details) {
-                                          final newDx =
-                                              details.localPosition.dx - 25;
-                                          final newDy =
-                                              details.localPosition.dy - 25;
-                                          micLongPressUpdateHandler(
-                                              newDx, newDy);
-                                        },
-                                        onPanEnd: (details) {
+                                          print('onLongPressEnd');
                                           micLongPressEndHandler();
                                         },
                                         child: IconButton(
                                           onPressed: () {},
-                                          icon: Icon(
+                                          icon: const Icon(
                                             Icons.mic,
                                             color: Colors.white,
                                           ),
@@ -873,7 +885,10 @@ class _BottomTextFieldState extends State<BottomTextField>
                                       //   value = decibelValue;
                                       // }
                                       // final double height = ((value.abs()-15)*(3/4))+5;
-
+                                      final double height =
+                                          ((decibelValue.abs() < 20)
+                                              ? 5
+                                              : decibelValue.abs());
                                       return Container(
                                           margin: const EdgeInsets.symmetric(
                                               horizontal: 0.5),
@@ -883,7 +898,7 @@ class _BottomTextFieldState extends State<BottomTextField>
                                                 BorderRadius.circular(5.0),
                                           ),
                                           width: 3.0,
-                                          height: ((decibelValue.abs()) / 6) *
+                                          height: ((height.abs()) / 6) *
                                               5 // Scale the decibel value to the height range of 0-100 pixels
                                           // height: height,
                                           );

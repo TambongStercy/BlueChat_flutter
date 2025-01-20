@@ -11,7 +11,7 @@ class AccountSettings extends StatelessWidget {
     return SafeArea(
       child: Scaffold(
         appBar: AppBar(
-          title: Text('Acount'),
+          title: Text('Account'),
         ),
         body: Column(
           children: [

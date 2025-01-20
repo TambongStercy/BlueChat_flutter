@@ -1,10 +1,12 @@
+import 'dart:io';
+
+import 'package:blue_chat_v1/components/video_trim.dart';
 import 'package:flutter/material.dart';
 import 'package:blue_chat_v1/components/circular_icon_avatar.dart';
 import 'package:blue_chat_v1/screens/camera_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:blue_chat_v1/constants.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:blue_chat_v1/screens/preview_screen.dart';
 
 import '../classes/message.dart';
 
@@ -123,18 +125,19 @@ class ModalContainerSendFiles extends StatelessWidget {
                 if (result == null) return;
 
                 final List<String> paths = [];
+                final List<File> files = [];
 
                 for (PlatformFile file in result.files) {
                   paths.add(file.path!);
+                  files.add(File(file.path!));
                 }
 
                 // ignore: use_build_context_synchronously
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => PreviewScreen(
-                      mediaPaths: paths,
-                      popsAfter: 2,
+                    builder: (context) => TrimmerPageView(
+                      mediaFiles: files,
                     ),
                   ),
                 );

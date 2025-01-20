@@ -31,7 +31,7 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    FlutterStatusbarcolor.setStatusBarColor(Colors.blue);
+    // FlutterStatusbarcolor.setStatusBarColor(Colors.blue);
     return Scaffold(
       body: SafeArea(
         child: Padding(

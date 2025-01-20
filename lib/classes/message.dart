@@ -1,5 +1,6 @@
 import 'package:blue_chat_v1/classes/user_hive_box.dart';
 import 'package:blue_chat_v1/constants.dart';
+import 'package:blue_chat_v1/providers/socket_io.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
@@ -56,6 +57,12 @@ class MessageModel extends HiveObject {
   @HiveField(15)
   int? initOffset;
 
+  @HiveField(16)
+  List<ReadSeenBy>? readBy;
+
+  @HiveField(17)
+  List<ReadSeenBy>? seenBy;
+
   MessageModel({
     required this.id,
     required this.sender,
@@ -72,6 +79,8 @@ class MessageModel extends HiveObject {
     this.decibels,
     this.filePath,
     this.repliedToId,
+    this.readBy,
+    this.seenBy,
   });
 
   Map<String, dynamic> toMap() {
@@ -132,19 +141,19 @@ class MessageModel extends HiveObject {
 
   factory MessageModel.fromJson(
     Map<String, dynamic> message,
+    String chatID,
     BuildContext context,
   ) {
     // ignore: use_build_context_synchronously
     final user = Provider.of<UserHiveBox>(context, listen: false);
-    final socket = Provider.of<SocketIo>(context, listen: false);
 
-    socket.context = context;
+    final socket = Provider.of<SocketIo>(context, listen: false);
 
     final messageID = message['id'];
 
     final file = message['file'] ?? {};
     final sender = message['sender'] as String;
-    final recipient = message['recipient'] as String;
+    // final recipient = message['recipient'] as String;
     final serverPath = file['path'] ?? '';
     List<double>? decibels;
 
@@ -161,7 +170,7 @@ class MessageModel extends HiveObject {
     final time = message['time'] ?? getTimeOrDate(date, true);
 
     final isMe = sender == user.id;
-    final chatId = isMe ? recipient : sender;
+    final chatId = chatID;
 
     final imageData = message['bluredFrame'];
 
@@ -176,13 +185,33 @@ class MessageModel extends HiveObject {
 
     MessageStatus status = getMessageStatusFromString(stringStatus);
 
-    print('message converted');
-    if (stringStatus == 'sent' && !isMe) {
-      print('sending "recieved" to chat');
-
+    if (stringStatus == 'sent' && !isMe && socket.exist) {
       status = MessageStatus.received;
       socket.messageRecieved(chatId, messageID);
+      print('messages recieved now:');
+      print(message);
     }
+
+    final readByJson = message['recievedBy'];
+
+    final seenByJson = message['seenBy'];
+
+    List<ReadSeenBy> readBy = readByJson != null
+        ? readByJson
+            .map((json) => ReadSeenBy.fromJson(json))
+            .toList()
+            .cast<ReadSeenBy>()
+        : [];
+
+    List<ReadSeenBy> seenBy = seenByJson != null
+        ? seenByJson
+            .map((json) => ReadSeenBy.fromJson(json))
+            .toList()
+            .cast<ReadSeenBy>()
+        : [];
+
+    // readBy;
+    // seenBy;
 
     return MessageModel(
       id: messageID,
@@ -198,10 +227,189 @@ class MessageModel extends HiveObject {
       size: size,
       decibels: decibels,
       repliedToId: message['repliedToId'] as String?,
+      readBy: readBy,
+      seenBy: seenBy,
     );
   }
 
-  void updateStatus(MessageStatus newStatus) => status = newStatus;
+  static Future<MessageModel> fromJsonNotif(
+    Map<String, dynamic> message,
+    String chatID,
+  ) async {
+    final box = (await Hive.openBox('user'));
+
+    String id = box.get('values')['id'];
+
+    final messageID = message['id'];
+
+    final file = message['file'] ?? {};
+    final sender = message['sender'] as String;
+    // final recipient = message['recipient'] as String;
+    final serverPath = file['path'] ?? '';
+    List<double>? decibels;
+
+    if (file['decibels'] != null) {
+      decibels = (file['decibels'] as List<dynamic>?)
+          ?.map((e) => (e as num).toDouble())
+          .toList();
+    } else {
+      decibels = null;
+    }
+
+    final size = file['size'] ?? 0;
+    final date = DateTime.parse(message['date'] as String);
+    final time = message['time'] ?? getTimeOrDate(date, true);
+
+    final isMe = sender == id;
+    final chatId = chatID;
+
+    final imageData = message['bluredFrame'];
+
+    final path = getMobilePath(serverPath);
+
+    if (imageData != null && serverPath != '') {
+      final bluredPath = getBluredPath(path);
+      saveImageToFile(imageData, bluredPath);
+    }
+
+    final stringStatus = message['status'];
+
+    MessageStatus status = getMessageStatusFromString(stringStatus);
+
+    final readByJson = message['recievedBy'];
+
+    final seenByJson = message['seenBy'];
+
+    List<ReadSeenBy> readBy = readByJson != null
+        ? readByJson
+            .map((json) => ReadSeenBy.fromJson(json))
+            .toList()
+            .cast<ReadSeenBy>()
+        : [];
+
+    List<ReadSeenBy> seenBy = seenByJson != null
+        ? seenByJson
+            .map((json) => ReadSeenBy.fromJson(json))
+            .toList()
+            .cast<ReadSeenBy>()
+        : [];
+
+    // readBy;
+    // seenBy;
+
+    return MessageModel(
+      id: messageID,
+      sender: message['senderName'] as String,
+      message: message['value'] as String,
+      time: time,
+      chatID: chatId,
+      date: date,
+      isMe: isMe,
+      type: getMessageTypeFromString(message['type']),
+      status: status,
+      filePath: path,
+      size: size,
+      decibels: decibels,
+      repliedToId: message['repliedToId'] as String?,
+      readBy: readBy,
+      seenBy: seenBy,
+    );
+  }
+
+  void _addReadBy(ReadSeenBy by) {
+    if (readBy == null) {
+      return;
+    }
+    bool? exist = readBy?.any((val) => val.chatId == by.chatId);
+
+    if (exist == true) {
+      return;
+    }
+    readBy?.add(by);
+  }
+
+  void _addSeenBy(ReadSeenBy by) {
+    if (seenBy == null) {
+      return;
+    }
+    bool? exist = seenBy?.any((val) => val.chatId == by.chatId);
+
+    if (exist == true) {
+      return;
+    }
+    seenBy?.add(by);
+  }
+
+  void updateStatus(
+    MessageStatus newStatus,
+    String chatID,
+    DateTime time,
+  ) {
+    final by = ReadSeenBy(
+      chatId: chatID,
+      time: time,
+    );
+
+    switch (status) {
+      case MessageStatus.sending:
+        if (newStatus == MessageStatus.sent ||
+            newStatus == MessageStatus.received ||
+            newStatus == MessageStatus.seen) {
+          status = newStatus;
+          if (newStatus == MessageStatus.received) _addReadBy(by);
+          if (newStatus == MessageStatus.seen) _addSeenBy(by);
+        }
+        break;
+      case MessageStatus.sent:
+        if (newStatus == MessageStatus.received ||
+            newStatus == MessageStatus.seen) {
+          status = newStatus;
+          if (newStatus == MessageStatus.received) _addReadBy(by);
+          if (newStatus == MessageStatus.seen) _addSeenBy(by);
+        }
+        break;
+      case MessageStatus.received:
+        if (newStatus == MessageStatus.seen) {
+          status = newStatus;
+          if (newStatus == MessageStatus.seen) _addSeenBy(by);
+        }
+        break;
+      case MessageStatus.seen:
+        print('is already seen');
+        // Do not update status if it's already seen
+        break;
+    }
+  }
+
+  String getNotificationMessage(){
+
+    String? icon = '';
+
+    switch (type) {
+      case MessageType.image:
+        icon = '📷';
+        break;
+      case MessageType.video:
+        icon = '📽️';
+        break;
+      case MessageType.audio:
+        icon = '🎧';
+        break;
+      case MessageType.voice:
+        icon = '🔉';
+        break;
+      case MessageType.files:
+        icon = '📄';
+        break;
+      default:
+        icon = null;
+        break;
+    }
+
+    final msg = message == ''?'':message;
+
+    return '$icon $msg';
+  }
 }
 
 @HiveType(typeId: 2)
@@ -230,6 +438,23 @@ enum MessageStatus {
   received,
   @HiveField(3)
   seen,
+}
+
+@HiveType(typeId: 4)
+class ReadSeenBy {
+  @HiveField(0)
+  final String chatId;
+  @HiveField(1)
+  final DateTime time;
+
+  ReadSeenBy({required this.chatId, required this.time});
+
+  factory ReadSeenBy.fromJson(readSeenBy) {
+    return ReadSeenBy(
+      chatId: readSeenBy["chat"],
+      time: DateTime.parse(readSeenBy["time"] as String),
+    );
+  }
 }
 
 MessageStatus getMessageStatusFromString(String statusString) {

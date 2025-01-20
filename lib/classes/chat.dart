@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:blue_chat_v1/classes/chat_hive_box.dart';
 import 'package:blue_chat_v1/classes/message.dart';
 import 'package:blue_chat_v1/classes/user_hive_box.dart';
 import 'package:blue_chat_v1/constants.dart';
+import 'package:blue_chat_v1/providers/file_upload.dart';
+import 'package:blue_chat_v1/providers/socket_io.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';
@@ -26,7 +30,7 @@ class Chat extends HiveObject {
   String avatar;
 
   @HiveField(4)
-  bool isGroup;
+  bool isGroup = false;
 
   @HiveField(5)
   String status;
@@ -58,8 +62,7 @@ class Chat extends HiveObject {
   @HiveField(14)
   bool? isTyping = false;
 
-  
-  @HiveField(14)
+  @HiveField(15)
   String? avatarBuffer;
 
   Timer? timer;
@@ -91,6 +94,10 @@ class Chat extends HiveObject {
     }
     return count;
   }
+
+  MessageModel get lastMessage => messages.last;
+  MessageModel getMessageById(String id) =>
+      messages.firstWhere((msg) => msg.id == id);
 
   void removeMessage(MessageModel cMsg) {
     // messages = messages.where((msg) => msg.id != cMsg.id).toList();
@@ -150,6 +157,17 @@ class Chat extends HiveObject {
     return true;
   }
 
+  bool removeAdmins({required List<String> chats, required String adminId}) {
+    if (adminsId!.contains(adminId)) return false;
+
+    for (String chat in chats) {
+      adminsId?.remove(chat);
+    }
+
+    save();
+    return true;
+  }
+
   void exitGroup({required String userId}) {
     participants?.remove(userId);
     save();
@@ -175,16 +193,22 @@ class Chat extends HiveObject {
             adminsId!.any((adminId) => adminId == id));
   }
 
-  void typing() {
+  Future<void> typing(context) async {
     if (timer != null) timer?.cancel();
     isTyping = true;
-    timer = Timer(const Duration(seconds: 2), () {
+
+    final updater = Provider.of<Updater>(context, listen: false);
+    updater.updateChatScreen();
+    updater.updateChatsScreen();
+
+    timer = Timer(const Duration(seconds: 1), () async {
       isTyping = false;
-      print('isTyping: ');
-      print(isTyping);
-      save();
+      await save();
+      updater.updateChatScreen();
+      updater.updateChatsScreen();
     });
-    save();
+
+    await save();
   }
 
   Future<void> updateStatus(String newStatus, DateTime newLastSeen) async {
@@ -193,44 +217,92 @@ class Chat extends HiveObject {
     await save();
   }
 
-  void makeMyMessageReceived(String messageID) {
+  void makeMyMessageReceived(
+    String messageID,
+    String chatId,
+    DateTime time,
+  ) {
     for (final message in messages) {
       if (message.isMe && message.id == messageID) {
-        message.updateStatus(MessageStatus.received);
+        if (isGroup && participants!.length - 1 <= message.readBy!.length) {
+          message.updateStatus(MessageStatus.received, chatId, time);
+        }
+        if (!isGroup)
+          message.updateStatus(MessageStatus.received, chatId, time);
         break;
       }
     }
+    save();
   }
 
   /// Mark all the messages user sent to chat as seen
-  void makeMyMessageSeen(String messageID) {
+  void makeMyMessageSeen(
+    String messageID,
+    String chatId,
+    DateTime time,
+  ) {
     for (final message in messages) {
       if (message.isMe && message.id == messageID) {
-        message.updateStatus(MessageStatus.seen);
+        if (isGroup && participants!.length - 1 <= message.seenBy!.length) {
+          message.updateStatus(MessageStatus.seen, chatId, time);
+        }
+        if (!isGroup) message.updateStatus(MessageStatus.seen, chatId, time);
         break;
       }
     }
+    save();
   }
 
   /// Mark all the messages chat sent to user as seen
-  void makeChatMessageSeen(String messageID, BuildContext context) async {
+  void makeChatMessageSeen(
+    String messageID,
+    BuildContext context,
+    String chatId,
+    DateTime time,
+  ) async {
     for (final message in messages) {
       if (!message.isMe &&
           message.id == messageID &&
           message.status != MessageStatus.seen) {
-        message.updateStatus(MessageStatus.seen);
-        Provider.of<SocketIo>(context).messageSeen(id, messageID);
+        message.updateStatus(MessageStatus.seen, chatId, time);
+        Provider.of<SocketIo>(context, listen: false)
+            .messageSeen(id, messageID);
         break;
       }
     }
+    save();
   }
 
-  void updateMessageStatus(String messageID, MessageStatus messageStatus) {
-    for (MessageModel message in messages) {
-      if (message.id == messageID) {
-        message.updateStatus(messageStatus);
+  void makeMessageSeenByMe(
+    String messageID,
+    BuildContext context,
+  ) async {
+    for (final message in messages) {
+      if (!message.isMe &&
+          message.id == messageID &&
+          message.status != MessageStatus.seen) {
+        final userBox = Provider.of<UserHiveBox>(context, listen: false);
+        message.updateStatus(MessageStatus.seen, userBox.id, DateTime.now());
+        Provider.of<SocketIo>(context, listen: false)
+            .messageSeen(id, messageID);
+        break;
       }
     }
+    save();
+  }
+
+  void updateMessageStatus(
+    String messageID,
+    MessageStatus messageStatus,
+    String chatId,
+    DateTime time,
+  ) {
+    for (MessageModel message in messages) {
+      if (message.id == messageID) {
+        message.updateStatus(messageStatus, chatId, time);
+      }
+    }
+
     save();
   }
 
@@ -241,16 +313,16 @@ class Chat extends HiveObject {
 
   String getParticipantsNames(BuildContext context) {
     final chatBox = Provider.of<ChatHiveBox>(context, listen: false);
-  final userBox = Provider.of<UserHiveBox>(context, listen: false);
+    final userBox = Provider.of<UserHiveBox>(context, listen: false);
     final List<String> memberNames = [];
 
     for (final id in participants!) {
-      if(userBox.id == id){
+      if (userBox.id == id) {
         continue;
       }
 
       final member = chatBox.getChat(id);
-      if(member == null){
+      if (member == null) {
         continue;
       }
       memberNames.add(member.name);
@@ -299,8 +371,6 @@ class Chat extends HiveObject {
     if (type != MessageType.text && path != null) {
       realPath = (await saveFileFromCache(path, type))!;
       size = getFileSize(realPath);
-    } else {
-      print('what type of message is this?');
     }
 
     final msgID = userID + chatID + now.toIso8601String();
@@ -318,12 +388,10 @@ class Chat extends HiveObject {
       filePath: realPath,
       decibels: decibels,
       status: MessageStatus.sending,
-      repliedToId: repMsg.message != null ? repMsg.message!.id : null,
+      repliedToId: repMsg.message?.id,
     );
     isAsearch = false;
     messages.add(message);
-
-    print('yes yes, msgID: $msgID');
 
     await save();
 
@@ -337,6 +405,17 @@ class Chat extends HiveObject {
     }
 
     return message;
+  }
+
+  Future<void> sendAllYourMessages(BuildContext context) async {
+    for (final message in messages) {
+      if (message.isMe && message.status == MessageStatus.sending) {
+        final socket = Provider.of<SocketIo>(context, listen: false);
+        if(socket.isConnected) {
+          socket.sendMessage(chatID: id, message: message);
+        }
+      }
+    }
   }
 
   ///Add message model to chat messages
@@ -375,7 +454,7 @@ class Chat extends HiveObject {
     }
 
     if (adminsId != null) {
-      chatMap['adminsId'] = adminsId;
+      chatMap['admins'] = adminsId;
     }
 
     return chatMap;
@@ -384,14 +463,17 @@ class Chat extends HiveObject {
   ///Creates a Chat object from json object that was sent
   factory Chat.fromJson(Map<String, dynamic> chat, BuildContext context) {
     final object = chat['messages'];
+    final id = chat['id'];
 
     final List<String>? participants = chat['participants']?.cast<String>();
-    final List<String>? adminsId = chat['adminsId']?.cast<String>();
+    final List<String>? adminsId = chat['admins']?.cast<String>();
+
+    print('is a group: ${chat['isGroup']}');
 
     final List<MessageModel> messages = object != null && object.isNotEmpty
         ? object
             .map((message) {
-              return MessageModel.fromJson(message, context);
+              return MessageModel.fromJson(message, id, context);
             })
             .toList()
             .cast<MessageModel>()
@@ -399,16 +481,83 @@ class Chat extends HiveObject {
 
     final lastSeen =
         chat['lastSeen'] != null ? DateTime.parse(chat['lastSeen']) : null;
-    
+
     final avatarBuffer = chat['avatarBuffer'];
 
     final serverPath = chat['avatar'];
-    
+
     final path = getMobilePath(serverPath);
 
+    final ppFile = File(path);
+
+    if (avatarBuffer != null) {
+      if (ppFile.existsSync()) {
+        ppFile.deleteSync();
+      }
+      ppFile.createSync(recursive: true);
+      final Uint8List bytes = base64Decode(avatarBuffer);
+      ppFile.writeAsBytesSync(bytes);
+
+      roundImageAndSave(ppFile);
+    }
 
     return Chat(
-      id: chat['id'],
+      id: id,
+      name: chat['username'],
+      avatar: path,
+      avatarBuffer: avatarBuffer,
+      email: chat['email'],
+      status: chat['status'],
+      lastSeen: lastSeen,
+      messages: messages,
+      isGroup: chat['isGroup'],
+      isClosed: chat['isClosed'],
+      participants: participants,
+      description: chat['description'],
+      onlyAdmins: chat['onlyAdmins'],
+      adminsId: adminsId,
+      isAsearch: false,
+    );
+  }
+
+  factory Chat.fromJsonNotif(Map<String, dynamic> chat) {
+    final object = chat['messages'];
+    final id = chat['id'];
+
+    final List<String>? participants = chat['participants']?.cast<String>();
+    final List<String>? adminsId = chat['admins']?.cast<String>();
+
+    final List<MessageModel> messages = object != null && object.isNotEmpty
+        ? object
+            .map((message) {
+              return MessageModel.fromJsonNotif(message, id);
+            })
+            .toList()
+            .cast<MessageModel>()
+        : [];
+
+    final lastSeen =
+        chat['lastSeen'] != null ? DateTime.parse(chat['lastSeen']) : null;
+
+    final avatarBuffer = chat['avatarBuffer'];
+
+    final serverPath = chat['avatar'];
+
+    final path = getMobilePath(serverPath);
+
+    final ppFile = File(path);
+
+    if (avatarBuffer != null) {
+      if (ppFile.existsSync()) {
+        ppFile.deleteSync();
+      }
+      ppFile.createSync(recursive: true);
+      final Uint8List bytes = base64Decode(avatarBuffer);
+      ppFile.writeAsBytesSync(bytes);
+    }
+
+    return Chat(
+      id: id,
       name: chat['username'],
       avatar: path,
       avatarBuffer: avatarBuffer,

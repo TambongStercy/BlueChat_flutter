@@ -171,7 +171,7 @@ class _ImageSliderPageState extends State<ImageSliderPage> {
                             Expanded(
                               child: (widget.initialIndex == index)
                                   ? Hero(
-                                      tag: 'chatImage ${index}',
+                                      tag: 'chatImage ${media.id}',
                                       child: Material(
                                         color: Colors.transparent,
                                         child: MyVideoPlayer(
@@ -196,7 +196,7 @@ class _ImageSliderPageState extends State<ImageSliderPage> {
                             Expanded(
                               child: (widget.initialIndex == index)
                                   ? Hero(
-                                      tag: 'chatImage ${index}',
+                                      tag: 'chatImage ${media.id}',
                                       child: PhotoView(
                                         backgroundDecoration:
                                             const BoxDecoration(

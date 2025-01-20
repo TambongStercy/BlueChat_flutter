@@ -88,14 +88,16 @@ class _LoginScreenState extends State<LoginScreen> {
                             password: password,
                           );
 
-                          setState(() {
-                            waiting = false;
-                          });
-                        } on Exception catch (e) {
+                          // setState(() {
+                          //   waiting = false;
+                          // });
+                        } catch (e) {
                           print(e);
-                          setState(() {
-                            waiting = false;
-                          });
+                          if (mounted) {
+                            setState(() {
+                              waiting = false;
+                            });
+                          }
                         }
                       },
                     ),

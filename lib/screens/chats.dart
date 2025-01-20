@@ -5,11 +5,16 @@ import 'package:blue_chat_v1/classes/level_hive_box.dart';
 import 'package:blue_chat_v1/classes/levels.dart';
 import 'package:blue_chat_v1/classes/message.dart';
 import 'package:blue_chat_v1/classes/user_hive_box.dart';
+import 'package:blue_chat_v1/main.dart';
+import 'package:blue_chat_v1/providers/file_download.dart';
+import 'package:blue_chat_v1/providers/file_upload.dart';
+import 'package:blue_chat_v1/providers/socket_io.dart';
 import 'package:blue_chat_v1/screens/course_selection.dart';
 import 'package:blue_chat_v1/screens/creat_course.dart';
 import 'package:blue_chat_v1/screens/newgroup_members.dart';
 import 'package:blue_chat_v1/screens/upload_question.dart';
 import 'package:blue_chat_v1/screens/user_settings.dart';
+import 'package:blue_chat_v1/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:blue_chat_v1/constants.dart';
 import 'package:blue_chat_v1/components/chat_box.dart';
@@ -26,7 +31,7 @@ class ChatsScreen extends StatefulWidget {
 }
 
 class _ChatsScreenState extends State<ChatsScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, RouteAware {
   bool _selectionMode = false;
   bool _isVisible = false;
   final FocusNode _focusNode = FocusNode();
@@ -39,22 +44,69 @@ class _ChatsScreenState extends State<ChatsScreen>
 
   @override
   void initState() {
+    if (isNewUser) {
+      //socket connection already exist here
+      getUserChats(context: context);
+    } else {
+    Provider.of<SocketIo>(context, listen: false).connectSocket(context);
+      Provider.of<FileUploadProvider>(context, listen: false)
+          .resetUploadItems();
+      Provider.of<DownloadProvider>(context, listen: false)
+          .resetDownloadItems();
+    }
+
     _tabController = TabController(length: 3, vsync: this, initialIndex: 0);
     _tabController!.addListener(_handleTabChange);
+
+    Provider.of<FileUploadProvider>(context, listen: false).resetUploadItems();
+    Provider.of<DownloadProvider>(context, listen: false).resetDownloadItems();
+
+    Provider.of<ChatHiveBox>(context, listen: false)
+        .getAllChats()
+        .forEach((chat) => chat.sendAllYourMessages(context));
+
     super.initState();
   }
 
   void _updatePage() {
     if (mounted) {
-      Provider.of<CurrentChat>(context, listen: false).empty();
+      // Provider.of<CurrentChat>(context, listen: false).empty();
       setState(() {});
     }
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final ModalRoute? modalRoute = ModalRoute.of(context);
+    if (modalRoute is PageRoute) {
+      routeObserver.subscribe(this, modalRoute);
+    }
+  }
+
+  @override
+  void didPush() {
+    super.didPush();
+    print('Screen was pushed');
+    PushNotifications.cancelAll();
+  }
+
+  @override
+  void didPopNext() {
+    super.didPopNext();
+    print('Returned to the screen');
+    PushNotifications.cancelAll();
+  }
+
+  @override
   void dispose() {
+    routeObserver.unsubscribe(this);
     _focusNode.dispose();
     _tabController!.removeListener(_handleTabChange);
+    if (context.mounted) {
+      Provider.of<SocketIo>(context, listen: false).disconnect();
+    }
+
     super.dispose();
   }
 
@@ -115,7 +167,8 @@ class _ChatsScreenState extends State<ChatsScreen>
   Widget build(BuildContext context) {
     Provider.of<Updater>(context, listen: false)
         .addUpdater(ChatsScreen.id, _updatePage);
-    Provider.of<SocketIo>(context, listen: false).context = (context);
+
+    debugPrint(ModalRoute.of(context)?.settings.name);
 
     return DefaultTabController(
       length: 3,
@@ -129,13 +182,13 @@ class _ChatsScreenState extends State<ChatsScreen>
           }
         },
         child: Consumer<ChatHiveBox>(
-          builder: ((context, chatBox, child) => SafeArea(
-                child: Scaffold(
-                  backgroundColor: Colors.grey[100],
-                  body: Consumer<UserHiveBox>(builder: (context, user, child) {
-                    String name = user.name;
-                    print('userID: ${user.id}');
-                    return Column(
+          builder: ((context, chatBox, child) => Scaffold(
+                backgroundColor: Colors.grey[100],
+                body: Consumer<UserHiveBox>(builder: (context, user, child) {
+                  String name = user.name;
+                  print('userID: ${user.id}');
+                  return SafeArea(
+                    child: Column(
                       children: [
                         Container(
                           color: !_selectionMode
@@ -606,25 +659,25 @@ class _ChatsScreenState extends State<ChatsScreen>
                           },
                         ),
                       ],
-                    );
-                  }),
-                  floatingActionButton: _currentPage < 2
-                      ? FloatingActionButton(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => GroupCreationScreen(),
-                              ),
-                            );
-                          },
-                          child: const Icon(
-                            Icons.add,
-                            size: 30.0,
-                          ),
-                        )
-                      : null,
-                ),
+                    ),
+                  );
+                }),
+                floatingActionButton: _currentPage < 2
+                    ? FloatingActionButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => GroupCreationScreen(),
+                            ),
+                          );
+                        },
+                        child: const Icon(
+                          Icons.add,
+                          size: 30.0,
+                        ),
+                      )
+                    : null,
               )),
         ),
       ),
@@ -780,7 +833,8 @@ class QuestionPage extends StatelessWidget {
                       builder: (context, snapshot) {
                         List<Level> levels = [];
                         if (snapshot.connectionState ==
-                            ConnectionState.waiting && levelBox.isEmpty) {
+                                ConnectionState.waiting &&
+                            levelBox.isEmpty) {
                           return const Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
@@ -789,125 +843,124 @@ class QuestionPage extends StatelessWidget {
                               ),
                             ],
                           ); // Show a loading indicator.
-                        } else if(!levelBox.isEmpty){
+                        } else if (!levelBox.isEmpty) {
                           levels = levelBox.getAllLevelsSync;
-                        }else{
+                        } else {
                           levels = snapshot.data!;
                         }
-                        
-                          return ListView(
-                            padding: const EdgeInsets.all(10),
-                            children: levels.map((level) {
-                              return Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  ExpansionTile(
-                                    onExpansionChanged: (isExpanded) {
-                                      print(isExpanded);
-                                    },
-                                    leading: CircleAvatar(
-                                      radius: 18,
-                                      backgroundColor: Colors.transparent,
-                                      child: SvgPicture.asset(
-                                        'assets/svg/bookmark.svg',
-                                        width: 20.0,
+
+                        return ListView(
+                          padding: const EdgeInsets.all(10),
+                          children: levels.map((level) {
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ExpansionTile(
+                                  onExpansionChanged: (isExpanded) {
+                                    print(isExpanded);
+                                  },
+                                  leading: CircleAvatar(
+                                    radius: 18,
+                                    backgroundColor: Colors.transparent,
+                                    child: SvgPicture.asset(
+                                      'assets/svg/bookmark.svg',
+                                      width: 20.0,
+                                    ),
+                                  ),
+                                  title: Text(
+                                    'Level ${level.value}',
+                                    style: const TextStyle(
+                                      color: Colors.black,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  children: [
+                                    ListTile(
+                                      title: const Text(
+                                        '1st Semester',
+                                      ),
+                                      onTap: () async {
+                                        try {
+                                          await getLevelCourses(
+                                            context: context,
+                                            level: level.value,
+                                            semester: 'first',
+                                          );
+
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) =>
+                                                  CourseSelectionScreen(
+                                                courses: level.semester1,
+                                                level: level.value,
+                                                semester: 'first',
+                                              ),
+                                            ),
+                                          );
+                                          print(
+                                              'Navigate to level ${level.value} 1st semester courses.');
+                                        } on Exception catch (e) {
+                                          print(e);
+                                        }
+                                      },
+                                      trailing: const Icon(Icons.arrow_right),
+                                    ),
+                                    ListTile(
+                                      title: const Text('2nd Semester'),
+                                      onTap: () async {
+                                        try {
+                                          await getLevelCourses(
+                                            context: context,
+                                            level: level.value,
+                                            semester: 'second',
+                                          );
+
+                                          // ignore: use_build_context_synchronously
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (context) =>
+                                                  CourseSelectionScreen(
+                                                courses: level.semester2,
+                                                level: level.value,
+                                                semester: 'second',
+                                              ),
+                                            ),
+                                          );
+                                          print(
+                                              'Navigate to level ${level.value} 2nd semester courses.');
+                                        } catch (e) {
+                                          print(e);
+                                        }
+                                        // Navigator.push(
+                                        //   context,
+                                        //   MaterialPageRoute(
+                                        //     builder: (context) =>
+                                        //         CourseSelectionScreen(
+                                        //       courses: level.semester2,
+                                        //       level: level.value,
+                                        //       semester: 'second',
+                                        //     ),
+                                        //   ),
+                                        // );
+                                        // print(
+                                        //     'Navigate to level ${level.value} 2st semester courses.');
+                                      },
+                                      trailing: const Icon(
+                                        Icons.arrow_right,
                                       ),
                                     ),
-                                    title: Text(
-                                      'Level ${level.value}',
-                                      style: const TextStyle(
-                                        color: Colors.black,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    children: [
-                                      ListTile(
-                                        title: const Text(
-                                          '1st Semester',
-                                        ),
-                                        onTap: () async {
-                                          try {
-                                            await getLevelCourses(
-                                              context: context,
-                                              level: level.value,
-                                              semester: 'first',
-                                            );
-
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (context) =>
-                                                    CourseSelectionScreen(
-                                                  courses: level.semester1,
-                                                  level: level.value,
-                                                  semester: 'first',
-                                                ),
-                                              ),
-                                            );
-                                            print(
-                                                'Navigate to level ${level.value} 1st semester courses.');
-                                          } on Exception catch (e) {
-                                            print(e);
-                                          }
-                                        },
-                                        trailing: const Icon(Icons.arrow_right),
-                                      ),
-                                      ListTile(
-                                        title: const Text('2nd Semester'),
-                                        onTap: () async {
-                                          try {
-                                            await getLevelCourses(
-                                              context: context,
-                                              level: level.value,
-                                              semester: 'second',
-                                            );
-
-                                            // ignore: use_build_context_synchronously
-                                            Navigator.push(
-                                              context,
-                                              MaterialPageRoute(
-                                                builder: (context) =>
-                                                    CourseSelectionScreen(
-                                                  courses: level.semester2,
-                                                  level: level.value,
-                                                  semester: 'second',
-                                                ),
-                                              ),
-                                            );
-                                            print(
-                                                'Navigate to level ${level.value} 2nd semester courses.');
-                                          } on Exception catch (e) {
-                                            print(e);
-                                          }
-                                          // Navigator.push(
-                                          //   context,
-                                          //   MaterialPageRoute(
-                                          //     builder: (context) =>
-                                          //         CourseSelectionScreen(
-                                          //       courses: level.semester2,
-                                          //       level: level.value,
-                                          //       semester: 'second',
-                                          //     ),
-                                          //   ),
-                                          // );
-                                          // print(
-                                          //     'Navigate to level ${level.value} 2st semester courses.');
-                                        },
-                                        trailing: const Icon(
-                                          Icons.arrow_right,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const Divider(
-                                    height: 2,
-                                    color: Colors.black12,
-                                  ),
-                                ],
-                              );
-                            }).toList(),
-                          );
-                        
+                                  ],
+                                ),
+                                const Divider(
+                                  height: 2,
+                                  color: Colors.black12,
+                                ),
+                              ],
+                            );
+                          }).toList(),
+                        );
                       }),
                 ),
               ),

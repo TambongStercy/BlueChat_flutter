@@ -20,8 +20,8 @@ class ImagePickerView extends StatefulWidget {
 }
 
 class _ImagePickerViewState extends State<ImagePickerView> {
-  List<AssetEntity> ?_assetList;
-  ScrollController ?_scrollController;
+  List<AssetEntity>? _assetList;
+  ScrollController? _scrollController;
 
   @override
   void initState() {
@@ -58,58 +58,55 @@ class _ImagePickerViewState extends State<ImagePickerView> {
       itemCount: _assetList?.length,
       itemBuilder: (context, index) {
         return FutureBuilder(
-          future: _loadAssets(),
-          builder: (context, snapshot) {
-            if(snapshot.hasData||_assetList!=null){
-              return GestureDetector(
-                onTap: () {
-                  if (widget.addToChecked != null) {
+            future: _loadAssets(),
+            builder: (context, snapshot) {
+              if (snapshot.hasData || _assetList != null) {
+                return GestureDetector(
+                  onTap: () {
                     widget.addToChecked(_assetList![index]);
-                  }
-                },
-                onLongPress: () {
-                  if (widget.removeFromChecked != null) {
+                  },
+                  onLongPress: () {
                     widget.removeFromChecked(_assetList![index]);
-                  }
-                },
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: Image(
-                        image: AssetEntityImageProvider(_assetList![index]),
-                        fit: BoxFit.cover,
+                  },
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: Image(
+                          image: AssetEntityImageProvider(_assetList![index]),
+                          fit: BoxFit.cover,
+                        ),
                       ),
-                    ),
-                    widget.removeFromChecked != null &&
-                            widget.addToChecked != null
-                        ? Positioned(
-                            top: 0,
-                            right: 0,
-                            child: Checkbox(
-                              value: Provider.of<PhotoProvider>(context)
-                                  .checked
-                                  .contains(_assetList![index]),
-                              onChanged: (bool? value) {
-                                if (value != null) {
-                                  if (value) {
-                                    widget.addToChecked(_assetList![index]);
-                                  } else {
-                                    widget.removeFromChecked(_assetList![index]);
+                      // ignore: unnecessary_null_comparison
+                      widget.removeFromChecked != null
+                          ? Positioned(
+                              top: 0,
+                              right: 0,
+                              child: Checkbox(
+                                value: Provider.of<PhotoProvider>(context)
+                                    .checked
+                                    .contains(_assetList![index]),
+                                onChanged: (bool? value) {
+                                  if (value != null) {
+                                    if (value) {
+                                      widget.addToChecked(_assetList![index]);
+                                    } else {
+                                      widget.removeFromChecked(
+                                          _assetList![index]);
+                                    }
                                   }
-                                }
-                              },
-                            ),
-                          )
-                        : const SizedBox(),
-                  ],
-                ),
-              );
-              
-            }else{
-              return const Center(child: CircularProgressIndicator(),);
-            }
-          }
-        );
+                                },
+                              ),
+                            )
+                          : const SizedBox(),
+                    ],
+                  ),
+                );
+              } else {
+                return const Center(
+                  child: CircularProgressIndicator(),
+                );
+              }
+            });
       },
     );
   }

@@ -1,8 +1,10 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:blue_chat_v1/classes/chat.dart';
 import 'package:blue_chat_v1/classes/user_hive_box.dart';
+import 'package:blue_chat_v1/providers/file_download.dart';
+import 'package:blue_chat_v1/providers/file_upload.dart';
+import 'package:blue_chat_v1/providers/socket_io.dart';
 import 'package:blue_chat_v1/screens/share_to_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -53,6 +55,9 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     getFiles();
     initMessages();
+    // Provider.of<SocketIo>(context, listen: false).requestChatStatus(widget.chat.id);
+    Provider.of<FileUploadProvider>(context, listen: false).resetUploadItems();
+    Provider.of<DownloadProvider>(context, listen: false).resetDownloadItems();
     super.initState();
   }
 
@@ -71,6 +76,10 @@ class _ChatScreenState extends State<ChatScreen> {
     final mediaMsgs = chat.getMediaMessages();
     for (MessageModel message in messages) {
       int index = mediaMsgs.indexWhere((msg) => msg.id == message.id);
+      if(!message.isMe && message.status != MessageStatus.seen && !chat.isGroup) {
+        chat.makeMessageSeenByMe(message.id, context);
+        chat.save();
+      }
 
       _message.add(
         ChatMessage(
@@ -141,6 +150,8 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _changeDraft(newValue) {
+    Provider.of<SocketIo>(context, listen: false).typing(widget.chat.id);
+
     setState(() {
       draft = newValue;
     });
@@ -285,11 +296,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      //place chat to current chat
-      Provider.of<CurrentChat>(context, listen: false).empty();
-      Provider.of<CurrentChat>(context, listen: false).addChat(widget.chat);
-    });
+    final currentChatProvider = Provider.of<CurrentChat>(context);
+    final isConnected = Provider.of<SocketIo>(context).isConnected;
 
     final userID = Provider.of<UserHiveBox>(context, listen: false).id;
 
@@ -298,45 +306,39 @@ class _ChatScreenState extends State<ChatScreen> {
     final chat = widget.chat;
 
     final String chatName = chat.name;
-    final String lastSeen = chat.isGroup
-        ? chat.getParticipantsNames(context)
-        : chat.formatedLastSeen();
+    final String lastSeen = isConnected
+        ? (chat.isGroup
+            ? chat.getParticipantsNames(context)
+            : currentChatProvider.lastSeen)
+        : '';
+
+    final isTyping = chat.isTyping ?? false;
 
     final bool isGroup = chat.isGroup;
     final bool isMember = chat.isMember(userID);
     final bool isGroupAdmin = chat.isGroupAdmin(userID);
     final bool isOnlyAdmin = chat.onlyAdmins ?? false;
 
-    
     final avatarUrl = chat.avatar;
 
-    final hasPP = avatarUrl != 'default.png';
+    screenSize = MediaQuery.of(context).size;
 
-    MemoryImage? decodedImage;
-
-    if (chat.avatarBuffer == null) {
-      print('avatarBuffer: null');
-    }
-
-    if (chat.avatarBuffer != null && hasPP) {
-      final Uint8List decodedImageBytes = base64Decode(chat.avatarBuffer!);
-      decodedImage = MemoryImage(decodedImageBytes);
-    }
+    final ppFile = File(avatarUrl);
 
     final CircleAvatar ppWidget;
-    if (hasPP) {      
+    if (ppFile.existsSync()) {
       ppWidget = CircleAvatar(
-        backgroundImage: decodedImage,
-        radius: 25.0,
+        backgroundImage: FileImage(ppFile),
+        radius: 23.0,
       );
     } else {
       ppWidget = !chat.isGroup
           ? const CircleAvatar(
               backgroundImage: AssetImage('assets/images/user.png'),
-              radius: 25.0,
+              radius: 23.0,
             )
           : CircleAvatar(
-              radius: 25.0,
+              radius: 23,
               backgroundColor: Colors.blueGrey[200],
               child: SvgPicture.asset(
                 "assets/svg/groups.svg",
@@ -347,15 +349,11 @@ class _ChatScreenState extends State<ChatScreen> {
             );
     }
 
-
     final String? wallPaper =
         Provider.of<ConstantAppData>(context, listen: false).wallPaper;
 
     Provider.of<Updater>(context, listen: false)
         .addUpdater(ChatScreen.id, updatePage);
-    Provider.of<SocketIo>(context, listen: false).context = (context);
-
-    print('refreshing chat screen');
 
     return Stack(
       children: [
@@ -381,7 +379,12 @@ class _ChatScreenState extends State<ChatScreen> {
               backgroundColor: Colors.transparent,
               appBar: (selection.selectionMode)
                   ? AppBar(
-                      title: Text('${selection.selectedItems}'),
+                      title: Text(
+                        '${selection.selectedItems}',
+                        style: TextStyle(
+                          color: Colors.grey,
+                        ),
+                      ),
                       actions: [
                         IconButton(
                           icon: const Icon(Icons.share),
@@ -488,6 +491,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           );
                         },
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
                             Hero(
                               tag: 'cpp',
@@ -496,26 +500,33 @@ class _ChatScreenState extends State<ChatScreen> {
                             const SizedBox(
                               width: 10.0,
                             ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  chatName,
-                                  style: const TextStyle(
-                                    fontSize: 20.0,
-                                    color: Colors.white,
+                            SizedBox(
+                              width: 190,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    chatName,
+                                    softWrap: true,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 20.0,
+                                      color: Color.fromARGB(255, 45, 49, 52),
+                                    ),
                                   ),
-                                ),
-                                Text(
-                                  lastSeen,
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                  style: const TextStyle(
-                                    fontSize: 15.0,
-                                    color: Colors.white54,
+                                  Text(
+                                    isTyping ? 'typing...' : lastSeen,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                    style: TextStyle(
+                                      fontSize: 15.0,
+                                      color: isTyping
+                                          ? Colors.blue
+                                          : Color.fromARGB(255, 45, 49, 52),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ],
                         ),
@@ -553,158 +564,152 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ],
                     ),
-              body: SizedBox(
-                height: MediaQuery.of(context).size.height,
-                width: MediaQuery.of(context).size.width,
-                child: Column(
-                  children: [
-                    Expanded(
-                      child: Stack(
-                        alignment: Alignment.topCenter,
-                        children: [
-                          Consumer<CurrentChat>(
-                            builder: (context, currentChats, child) {
-                              final chat = currentChats.openedChat;
-
-                              widget.chat = chat ?? widget.chat;
-
-                              initMessages();
-
-                              return Positioned.fill(
-                                child: ScrollablePositionedList.builder(
-                                  itemScrollController: _itemScrollController,
-                                  physics:
-                                      const AlwaysScrollableScrollPhysics(),
-                                  shrinkWrap: true,
-                                  reverse: true,
-                                  padding: const EdgeInsets.only(
-                                    bottom: 10,
-                                  ),
-                                  itemCount: _message.length,
-                                  itemBuilder:
-                                      (BuildContext context, int index) {
-                                    final List<ChatMessage> messages =
-                                        _message.reversed.toList();
-
-                                    final ChatMessage currentMessage =
-                                        messages[index];
-
-                                    if (!currentMessage.isMe &&
-                                        currentMessage.status !=
-                                            MessageStatus.seen) {
-                                      print('not yet seen');
-                                      widget.chat.makeChatMessageSeen(
-                                          currentMessage.id, context);
-                                    }
-
-                                    final DateTime currentDateTime =
-                                        currentMessage.dateTime;
-
-                                    if (currentMessage == messages.last) {
-                                      return Column(
-                                        children: [
-                                          ShowDay(
-                                            value: getTimeOrDate(
-                                                currentDateTime, false),
-                                          ),
-                                          currentMessage,
-                                        ],
-                                      );
-                                    } else if (index >= 0) {
-                                      final prevDateTime =
-                                          messages[index + 1].dateTime;
-
-                                      if (!isSameDay(
-                                        currentDateTime,
-                                        prevDateTime,
-                                      )) {
+              body: SafeArea(
+                child: SizedBox(
+                  height: MediaQuery.of(context).size.height,
+                  width: MediaQuery.of(context).size.width,
+                  child: Column(
+                    children: [
+                      Expanded(
+                        child: Stack(
+                          alignment: Alignment.topCenter,
+                          children: [
+                            Consumer<CurrentChat>(
+                              builder: (context, currentChats, child) {
+                                final chat = currentChats.openedChat;
+                    
+                                widget.chat = chat ?? widget.chat;
+                    
+                                initMessages();
+                    
+                                return Positioned.fill(
+                                  child: ScrollablePositionedList.builder(
+                                    itemScrollController: _itemScrollController,
+                                    physics:
+                                        const AlwaysScrollableScrollPhysics(),
+                                    shrinkWrap: true,
+                                    reverse: true,
+                                    padding: const EdgeInsets.only(
+                                      bottom: 10,
+                                    ),
+                                    itemCount: _message.length,
+                                    itemBuilder:
+                                        (BuildContext context, int index) {
+                                      final List<ChatMessage> messages =
+                                          _message.reversed.toList();
+                    
+                                      final ChatMessage currentMessage =
+                                          messages[index];
+                    
+                                      final DateTime currentDateTime =
+                                          currentMessage.dateTime;
+                    
+                                      if (currentMessage == messages.last) {
                                         return Column(
                                           children: [
                                             ShowDay(
                                               value: getTimeOrDate(
-                                                currentDateTime,
-                                                false,
-                                              ),
+                                                  currentDateTime, false),
                                             ),
                                             currentMessage,
                                           ],
                                         );
+                                      } else if (index >= 0) {
+                                        final prevDateTime =
+                                            messages[index + 1].dateTime;
+                    
+                                        if (!isSameDay(
+                                          currentDateTime,
+                                          prevDateTime,
+                                        )) {
+                                          return Column(
+                                            children: [
+                                              ShowDay(
+                                                value: getTimeOrDate(
+                                                  currentDateTime,
+                                                  false,
+                                                ),
+                                              ),
+                                              currentMessage,
+                                            ],
+                                          );
+                                        } else {
+                                          return currentMessage;
+                                        }
                                       } else {
                                         return currentMessage;
                                       }
-                                    } else {
-                                      return currentMessage;
-                                    }
-                                  },
-                                ),
-                              );
-                            },
-                          ),
-                        ],
+                                    },
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    isGroup && !isMember
-                        ? Material(
-                            elevation: 10,
-                            color: Colors.white,
-                            child: Container(
-                              padding: EdgeInsets.all(20.0),
-                              width: width,
-                              child: const Text(
-                                'Only memebers can communicate in this group',
-                                style: TextStyle(
-                                  color: Colors.black54,
+                      isGroup && !isMember
+                          ? Material(
+                              elevation: 10,
+                              color: Colors.white,
+                              child: Container(
+                                padding: EdgeInsets.all(20.0),
+                                width: width,
+                                child: const Text(
+                                  'Only memebers can communicate in this group',
+                                  style: TextStyle(
+                                    color: Colors.black54,
+                                  ),
                                 ),
                               ),
-                            ),
-                          )
-                        : isGroup && !isGroupAdmin && isOnlyAdmin
-                            ? Material(
-                                elevation: 10,
-                                color: Colors.white,
-                                child: Container(
-                                  padding: EdgeInsets.all(20.0),
-                                  width: width,
-                                  child: const Text(
-                                    'Only admin can send messages in this group',
-                                    style: TextStyle(
-                                      color: Colors.black54,
+                            )
+                          : isGroup && !isGroupAdmin && isOnlyAdmin
+                              ? Material(
+                                  elevation: 10,
+                                  color: Colors.white,
+                                  child: Container(
+                                    padding: EdgeInsets.all(20.0),
+                                    width: width,
+                                    child: const Text(
+                                      'Only admin can send messages in this group',
+                                      style: TextStyle(
+                                        color: Colors.black54,
+                                      ),
                                     ),
                                   ),
+                                )
+                              : Column(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    // TextButton(
+                                    //   onPressed: () {
+                                    //     _scrollToIndex(0);
+                                    //   },
+                                    //   child: Text('Scroll'),
+                                    // ),
+                                    BottomTextField(
+                                      draft: draft,
+                                      emojiShowing: _emojiShowing,
+                                      textEditingController:
+                                          _textEditingController,
+                                      focusNode: _focusNode,
+                                      changeDraft: _changeDraft,
+                                      addMessage: _addMessage,
+                                      toggleEmojiPicker: _toggleEmojiPicker,
+                                      addFileMessage: _addFileMessage,
+                                      updatePage: updatePage,
+                                    ),
+                                    MyEmojiPicker(
+                                      emojiShowing: _emojiShowing,
+                                      onBackspacePressed: _onBackspacePressed,
+                                      textEditingController:
+                                          _textEditingController,
+                                      draft: draft,
+                                      addEmoji: _addEmoji,
+                                    ),
+                                  ],
                                 ),
-                              )
-                            : Column(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  // TextButton(
-                                  //   onPressed: () {
-                                  //     _scrollToIndex(0);
-                                  //   },
-                                  //   child: Text('Scroll'),
-                                  // ),
-                                  BottomTextField(
-                                    draft: draft,
-                                    emojiShowing: _emojiShowing,
-                                    textEditingController:
-                                        _textEditingController,
-                                    focusNode: _focusNode,
-                                    changeDraft: _changeDraft,
-                                    addMessage: _addMessage,
-                                    toggleEmojiPicker: _toggleEmojiPicker,
-                                    addFileMessage: _addFileMessage,
-                                    updatePage: updatePage,
-                                  ),
-                                  MyEmojiPicker(
-                                    emojiShowing: _emojiShowing,
-                                    onBackspacePressed: _onBackspacePressed,
-                                    textEditingController:
-                                        _textEditingController,
-                                    draft: draft,
-                                    addEmoji: _addEmoji,
-                                  ),
-                                ],
-                              ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

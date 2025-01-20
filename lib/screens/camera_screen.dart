@@ -1,8 +1,7 @@
 import 'dart:async';
-// import 'package:blue_chat_v1/screens/image_preview_screen.dart';
-// import 'package:blue_chat_v1/screens/video_preview_screen.dart';
-import 'package:blue_chat_v1/screens/preview_screen.dart';
-import 'package:blue_chat_v1/screens/album_screen.dart';
+import 'dart:io';
+import 'package:blue_chat_v1/components/video_trim.dart';
+import 'package:blue_chat_v1/screens/gallery_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:path_provider/path_provider.dart';
@@ -73,13 +72,13 @@ class _CameraScreenState extends State<CameraScreen> {
   Future<void> takeAPicture() async {
     _controller!.takePicture().then((XFile? file) {
       if (mounted && file != null) {
-        print('Picture Saved to ${file.path}');
+        final mediaFile = File(file.path);
+        // ignore: use_build_context_synchronously
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (builder) => PreviewScreen(
-              mediaPaths: [file.path],
-              popsAfter: 2,
+            builder: (context) => TrimmerPageView(
+              mediaFiles: [mediaFile],
             ),
           ),
         );
@@ -109,7 +108,7 @@ class _CameraScreenState extends State<CameraScreen> {
       }
     }
   }
-  
+
   void _checkZoomLevels() async {
     var minZoomLevel = await _controller!.getMinZoomLevel();
     var maxZoomLevel = await _controller!.getMaxZoomLevel();
@@ -119,7 +118,8 @@ class _CameraScreenState extends State<CameraScreen> {
 
   Future<void> setZoom(double zoomLevel) async {
     double minZoom = await _controller!.getMinZoomLevel();
-    double maxZoom = await _controller!.getMaxZoomLevel();;
+    double maxZoom = await _controller!.getMaxZoomLevel();
+    ;
 
     if (zoomLevel > maxZoom || zoomLevel < minZoom) {
       return;
@@ -135,13 +135,15 @@ class _CameraScreenState extends State<CameraScreen> {
         stopTimer();
         setState(() => _isRecording = false);
         print(file.path);
+        
         if (context.mounted) {
+          final mediaFile = File(file.path);
+          // ignore: use_build_context_synchronously
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => PreviewScreen(
-                mediaPaths: [file.path],
-                popsAfter: 2,
+              builder: (context) => TrimmerPageView(
+                mediaFiles: [mediaFile],
               ),
             ),
           );
@@ -207,8 +209,8 @@ class _CameraScreenState extends State<CameraScreen> {
   void _handleZoomPinch(ScaleUpdateDetails details) {
     // setState(() {
     // });
-    
-      setZoom(details.scale.clamp(1.0, 10));
+
+    setZoom(details.scale.clamp(1.0, 10));
     // _cameraController.setZoomLevel(_zoomLevel);
   }
 
@@ -267,8 +269,7 @@ class _CameraScreenState extends State<CameraScreen> {
                             Container(
                               decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: Colors.black38
-                                ),
+                                  color: Colors.black38),
                               // padding: const EdgeInsets.all(5.0),
                               child: IconButton(
                                 onPressed: () {
@@ -315,7 +316,7 @@ class _CameraScreenState extends State<CameraScreen> {
                       IconButton(
                         padding: const EdgeInsets.all(0),
                         onPressed: () {
-                          Navigator.pushNamed(context, AlbumPageView.id);
+                          Navigator.pushNamed(context, AlbumsPage.id);
                         },
                         icon: const Icon(
                           Icons.filter,
@@ -334,9 +335,9 @@ class _CameraScreenState extends State<CameraScreen> {
                         padding: EdgeInsets.all(_isRecording ? 20.0 : 5.0),
                         child: GestureDetector(
                             onTap: () {
-                              !isTakingPicture?
-                              takeAPicture():
-                              print('Is already taking a picture');
+                              !isTakingPicture
+                                  ? takeAPicture()
+                                  : print('Is already taking a picture');
                             },
                             onLongPress: () {
                               startVideoRecording();
@@ -359,7 +360,7 @@ class _CameraScreenState extends State<CameraScreen> {
                                       ? initialPosition - currentPosition
                                       : 1.0;
                               zoomLevel = (zoomLevel / 500) * 10;
-                  
+
                               setZoom(zoomLevel);
                             },
                             child: Icon(

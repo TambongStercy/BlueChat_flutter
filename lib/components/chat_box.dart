@@ -1,10 +1,9 @@
-import 'dart:convert';
 import 'dart:io';
 
-import 'package:blue_chat_v1/api_call.dart';
 import 'package:blue_chat_v1/classes/chat.dart';
 import 'package:blue_chat_v1/classes/chat_hive_box.dart';
 import 'package:blue_chat_v1/classes/message.dart';
+import 'package:blue_chat_v1/providers/socket_io.dart';
 import 'package:blue_chat_v1/screens/chat_settings.dart';
 import 'package:blue_chat_v1/screens/profile_picture.dart';
 import 'package:flutter/material.dart';
@@ -111,31 +110,24 @@ class _ChatBoxState extends State<ChatBox>
     String msg = widget.lastMessage.replaceAll('\n', '').trimLeft();
 
     if (msg.length > 23) {
-      msg = msg.substring(0, 23) + '...';
+      msg = '${msg.substring(0, 23)}...';
     }
+
     final chatBox = Provider.of<ChatHiveBox>(context, listen: false);
 
     final chat = chatBox.getChat(chatID)!;
 
+    final isTyping = chat.isTyping ?? false;
+    msg = isTyping ? 'Typing...' : msg;
+
     final avatarUrl = chat.avatar;
 
-    final hasPP = avatarUrl != 'default.png';
-
-    MemoryImage? decodedImage;
-
-    if (chat.avatarBuffer == null) {
-      print('avatarBuffer: null');
-    }
-
-    if (chat.avatarBuffer != null && hasPP) {
-      final Uint8List decodedImageBytes = base64Decode(chat.avatarBuffer!);
-      decodedImage = MemoryImage(decodedImageBytes);
-    }
+    final ppFile = File(avatarUrl);
 
     final CircleAvatar ppWidget;
-    if (hasPP) {
+    if (ppFile.existsSync()) {
       ppWidget = CircleAvatar(
-        backgroundImage: decodedImage,
+        backgroundImage: FileImage(ppFile),
         radius: 23.0,
       );
     } else {
@@ -220,19 +212,22 @@ class _ChatBoxState extends State<ChatBox>
 
     return MaterialButton(
       onPressed: () async {
-        print('press');
         if (!widget.selectionMode) {
           Provider.of<SocketIo>(context, listen: false)
               .requestChatStatus(chat.id);
+
+          Provider.of<CurrentChat>(context, listen: false).addChat(chat);
           Navigator.push(
             context,
             SlideRightToLeftPageRoute(
               builder: (context) => ChatScreen(
                 chat: chat,
               ),
+              routeSettings: RouteSettings(
+                name: ChatScreen.id,
+              ),
             ),
           ).then((data) {
-            print('back to chats');
             widget.updatePage();
           });
         } else {
@@ -409,24 +404,8 @@ class _ShowProfileState extends State<ShowProfile> {
     final String name = chat.name;
     final bool isGroup = chat.isGroup;
     final avatarUrl = chat.avatar;
-    final hasPP = avatarUrl != 'default.png';
 
     final ppFile = File(avatarUrl);
-
-    Uint8List? decodedImageBytes;
-
-    if (chat.avatarBuffer == null) {
-      print('avatarBuffer: null');
-    }
-
-    if (chat.avatarBuffer != null && hasPP) {
-      decodedImageBytes = base64Decode(chat.avatarBuffer!);
-    }
-
-    if (!ppFile.existsSync() && hasPP) {
-      //download image
-      downloadAvatar(context: context, chat: chat);
-    }
 
     final Widget ppWidget;
     if (ppFile.existsSync()) {
@@ -435,25 +414,20 @@ class _ShowProfileState extends State<ShowProfile> {
         fit: BoxFit.contain,
       );
     } else {
-      ppWidget = !hasPP
-          ? !isGroup
-              ? Image.asset(
-                  'assets/images/user1.png',
-                  fit: BoxFit.contain,
-                )
-              : CircleAvatar(
-                  radius: 150,
-                  backgroundColor: Colors.blueGrey[200],
-                  child: SvgPicture.asset(
-                    "assets/svg/groups.svg",
-                    color: Colors.white,
-                    height: 150,
-                    width: 150,
-                  ),
-                )
-          : Image.memory(
-              decodedImageBytes!,
+      ppWidget = !isGroup
+          ? Image.asset(
+              'assets/images/user1.png',
               fit: BoxFit.contain,
+            )
+          : CircleAvatar(
+              radius: 150,
+              backgroundColor: Colors.blueGrey[200],
+              child: SvgPicture.asset(
+                "assets/svg/groups.svg",
+                color: Colors.white,
+                height: 150,
+                width: 150,
+              ),
             );
     }
 
@@ -527,13 +501,6 @@ class _ShowProfileState extends State<ShowProfile> {
                                 Expanded(
                                   child: IconButton(
                                     onPressed: () {
-                                      // Provider.of<CurrentChats>(context,
-                                      //         listen: false)
-                                      //     .empty();
-                                      // Provider.of<CurrentChats>(context,
-                                      //         listen: false)
-                                      //     .addChat(widget.chat);
-                                      // Navigator.pop(context);
                                       Chat chat = Provider.of<ChatHiveBox>(
                                         context,
                                         listen: false,
@@ -544,6 +511,9 @@ class _ShowProfileState extends State<ShowProfile> {
                                         SlideRightToLeftPageRoute(
                                           builder: (context) => ChatScreen(
                                             chat: chat,
+                                          ),
+                                          routeSettings: RouteSettings(
+                                            name: ChatScreen.id,
                                           ),
                                         ),
                                       ).then((data) {
@@ -587,9 +557,6 @@ class _ShowProfileState extends State<ShowProfile> {
 
                                       Provider.of<CurrentChat>(context,
                                               listen: false)
-                                          .empty();
-                                      Provider.of<CurrentChat>(context,
-                                              listen: false)
                                           .addChat(chat);
                                       Navigator.push(
                                         context,
@@ -625,98 +592,6 @@ class _ShowProfileState extends State<ShowProfile> {
     );
   }
 }
-// child: Stack(
-//   children: [
-//     Image.asset(
-//       'assets/images/user1.png',
-//       scale: 0.09,
-//       width: 300.0,
-//       height: 300.0,
-//     ),
-//     Positioned(
-//       bottom: 20,
-//       child: SizedBox(
-//         width: 300.0,
-//         child: Container(
-//           color: Colors.white,
-//           child: Padding(
-//             padding: const EdgeInsets.symmetric(
-//                 vertical: 5, horizontal: 5),
-//             child: Row(
-//               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//               children: [
-//                 IconButton(
-//                   onPressed: () {
-//                     Provider.of<CurrentChats>(context,
-//                             listen: false)
-//                         .empty();
-//                     Provider.of<CurrentChats>(context,
-//                             listen: false)
-//                         .addChat(chat);
-//
-//                     // Navigator.pop(context);
-//                     Navigator.push(
-//                       context,
-//                       SlideRightToLeftPageRoute(
-//                         builder: (context) => ChatScreen(
-//                           chat: chat,
-//                         ),
-//                       ),
-//                     ).then((data) {
-//                       print('back to chats');
-//                       updatePage();
-//                     });
-//                   },
-//                   icon: const Icon(
-//                     Icons.message,
-//                     color: Colors.lightBlueAccent,
-//                   ),
-//                 ),
-//                 IconButton(
-//                   onPressed: () {},
-//                   icon: const Icon(
-//                     Icons.call,
-//                     color: Colors.lightBlueAccent,
-//                   ),
-//                 ),
-//                 IconButton(
-//                   onPressed: () {},
-//                   icon: const Icon(
-//                     Icons.videocam_rounded,
-//                     color: Colors.lightBlueAccent,
-//                   ),
-//                 ),
-//                 IconButton(
-//                   onPressed: () {
-//                     Provider.of<CurrentChats>(
-//                       context,
-//                       listen: false,
-//                     ).empty();
-//                     Provider.of<CurrentChats>(
-//                       context,
-//                       listen: false,
-//                     ).addChat(chat);
-//                     Navigator.popAndPushNamed(
-//                       context,
-//                       ChatSetting.id,
-//                     ).then((data) {
-//                       print('back to chats');
-//                       updatePage();
-//                     });
-//                   },
-//                   icon: const Icon(
-//                     Icons.info_outline,
-//                     color: Colors.lightBlueAccent,
-//                   ),
-//                 ),
-//               ],
-//             ),
-//           ),
-//         ),
-//       ),
-//     )
-//   ],
-// ),
 
 class HeroDialogRoute<T> extends PageRoute<T> {
   HeroDialogRoute({required this.builder}) : super();

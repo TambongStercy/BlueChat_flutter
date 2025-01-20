@@ -119,14 +119,18 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                             password: confirm,
                           );
 
-                          setState(() {
-                            waiting = false;
-                          });
-                        } on Exception catch (e) {
+                          if (context.mounted) {
+                            setState(() {
+                              waiting = false;
+                            });
+                          }
+                        } catch (e) {
                           print(e);
-                          setState(() {
-                            waiting = false;
-                          });
+                          if (context.mounted) {
+                            setState(() {
+                              waiting = false;
+                            });
+                          }
                         }
                       },
                     ),

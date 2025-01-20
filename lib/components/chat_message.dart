@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:blue_chat_v1/classes/chat_hive_box.dart';
+import 'package:blue_chat_v1/classes/user_hive_box.dart';
+import 'package:blue_chat_v1/providers/file_download.dart';
+import 'package:blue_chat_v1/providers/file_upload.dart';
 import 'package:mime/mime.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +16,7 @@ import 'package:video_player/video_player.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:blue_chat_v1/classes/message.dart';
 import 'package:blue_chat_v1/screens/mediafiles_slider_screen.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 
 class ChatMessage extends StatefulWidget {
   final String sender;
@@ -72,6 +76,165 @@ class _ChatMessageState extends State<ChatMessage>
     super.dispose();
   }
 
+  void _showMessageInfo(
+      BuildContext context, MessageModel message, bool isGroup) {
+    final chatBox = Provider.of<ChatHiveBox>(context, listen: false);
+    final userID = Provider.of<UserHiveBox>(context, listen: false).id;
+
+    // if (!message.isMe) return;
+
+    final isSending = message.status == MessageStatus.sending;
+
+    final sendX = isSending ? 'Sending' : 'Sent';
+
+    final icon1 = isSending
+        ? getStatusIcon(MessageStatus.sending)
+        : getStatusIcon(MessageStatus.sent);
+    final icon2 = getStatusIcon(MessageStatus.received)!;
+    final icon3 = getStatusIcon(MessageStatus.seen)!;
+
+    final time1 = getDuration(message.date);
+
+    final viewRecipts = message.readBy
+        ?.map((deliveredRecipt) {
+          if (deliveredRecipt.chatId == userID) {
+            return null;
+          }
+
+          final chat = chatBox.getChat(deliveredRecipt.chatId)!;
+          final deliveredTime = getDuration(deliveredRecipt.time);
+
+          final seenBy = message.seenBy;
+
+          final seenDate = (seenBy != null && seenBy.isNotEmpty)
+              ? seenBy.firstWhere((element) => element.chatId == chat.id).time
+              : null;
+          final seenTime = seenDate == null ? '____' : getDuration(seenDate);
+
+          final ppFile = File(chat.avatar);
+
+          final CircleAvatar ppWidget;
+          if (ppFile.existsSync()) {
+            ppWidget = CircleAvatar(
+              backgroundImage: FileImage(ppFile),
+              radius: 20.0,
+            );
+          } else {
+            ppWidget = const CircleAvatar(
+              backgroundImage: AssetImage('assets/images/user.png'),
+              radius: 20.0,
+            );
+          }
+
+          return ListTile(
+            leading: ppWidget,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10.0),
+            title: Text(
+              chat.name,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                fontSize: 15.0,
+              ),
+            ),
+            subtitle: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      deliveredTime,
+                      style: const TextStyle(
+                        fontSize: 10.0,
+                      ),
+                    ),
+                    Icon(
+                      icon2,
+                      size: 12.0,
+                    ),
+                  ],
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      seenTime,
+                      style: const TextStyle(
+                        fontSize: 10.0,
+                      ),
+                    ),
+                    Icon(icon3, size: 12.0, color: Colors.blue),
+                  ],
+                ),
+              ],
+            ),
+          );
+        })
+        .whereType<ListTile>()
+        .toList();
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text(
+            'Message info',
+            style: TextStyle(fontSize: 30),
+          ),
+          content: SizedBox(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 10.0),
+                  tileColor: Colors.grey.shade200,
+                  title: Row(
+                    children: [
+                      Icon(
+                        icon1,
+                        size: 20.0,
+                      ),
+                      const SizedBox(
+                        width: 5.0,
+                      ),
+                      Text(
+                        '$sendX $time1',
+                        style: const TextStyle(
+                          fontSize: 20.0,
+                        ),
+                      ),
+                    ],
+                  ),
+                  // subtitle: Text(
+                  //   time1,
+                  // ),
+                ),
+                const Divider(height: 1.0),
+                if (viewRecipts != null && viewRecipts.isNotEmpty)
+                  Container(
+                    height: 500,
+                    width: 300,
+                    color: Colors.grey.shade200,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: viewRecipts.map((tile) {
+                          return Column(
+                            children: [
+                              tile,
+                              const Divider(height: 1.0),
+                            ],
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -79,6 +242,8 @@ class _ChatMessageState extends State<ChatMessage>
     final chatBox = Provider.of<ChatHiveBox>(context, listen: false);
 
     final chat = chatBox.getChat(chatID)!;
+
+    final message = chat.getMessageById(widget.id);
 
     final avatarUrl = chat.avatar;
 
@@ -109,6 +274,9 @@ class _ChatMessageState extends State<ChatMessage>
                 message: widget,
               );
             }
+          },
+          onDoubleTap: () {
+            _showMessageInfo(context, message, chat.isGroup);
           },
           onLongPress: () async {
             if (!selection.selectionMode) {
@@ -151,9 +319,7 @@ class _ChatMessageState extends State<ChatMessage>
                         : MainAxisAlignment.start,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      widget.isMe
-                          ? const SizedBox()
-                          : ppWidget,
+                      widget.isMe ? const SizedBox() : ppWidget,
                       widget.isMe
                           ? const SizedBox(width: 30.0)
                           : RightAngleTriangleContainer(
@@ -258,6 +424,7 @@ class _ChatMessageState extends State<ChatMessage>
   }
 }
 
+// ignore: must_be_immutable
 class MessageContent extends StatelessWidget {
   MessageContent({
     super.key,
@@ -268,6 +435,9 @@ class MessageContent extends StatelessWidget {
 
   final bool selected;
   final ChatMessage widget;
+  double maxWidth = 290.0;
+  double minHeigth = 0.0;
+  double maxHeigth = double.infinity;
 
   Widget getContent() {
     final path = widget.filePath ?? '';
@@ -351,26 +521,6 @@ class MessageContent extends StatelessWidget {
     return const Text('No message');
   }
 
-  IconData? getStatusIcon(MessageStatus status) {
-    switch (status) {
-      // switch (MessageStatus.seen) {
-      case MessageStatus.sending:
-        return Icons.access_time_outlined;
-
-      case MessageStatus.sent:
-        return Icons.check;
-
-      case MessageStatus.received:
-        return Icons.done_all_rounded;
-
-      case MessageStatus.seen:
-        return Icons.done_all_rounded;
-
-      default:
-        return null;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final icon2 = getStatusIcon(widget.status!);
@@ -378,22 +528,42 @@ class MessageContent extends StatelessWidget {
     final date = widget.dateTime;
 
     final time = getTimeFromDate(date);
+
+    final type = widget.type;
+
+    if (type == MessageType.files || type == MessageType.audio) {
+      // if(type == MessageType.files)maxHeigth = 78.0;
+      // if(type == MessageType.audio)maxHeigth = 67.0;
+      // if(type == MessageType.audio)minHeigth = 60.0;
+      maxWidth = 250;
+      // maxHeigth = 80.0;
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         widget.repliedToId != null &&
                 Provider.of<CurrentChat>(context, listen: false).openedChat !=
                     null
-            ? RepliedCard(
-                scrollTo: widget.scrollTo,
-                id: widget.repliedToId!,
+            ? Container(
+                // constraints: BoxConstraints(
+                //   maxWidth: maxWidth,
+                //   maxHeight: maxHeigth,
+                //   minHeight: minHeigth,
+                // ),
+                child: RepliedCard(
+                  scrollTo: widget.scrollTo,
+                  id: widget.repliedToId!,
+                ),
               )
             : const SizedBox(),
         Container(
-          constraints: const BoxConstraints(
-            maxWidth: 250.0,
-          ),
           // color: Colors.white,
+          constraints: BoxConstraints(
+            maxWidth: maxWidth,
+            maxHeight: maxHeigth,
+            minHeight: minHeigth,
+          ),
           child: widget.message != ''
               ? Container(
                   // color: Colors.green,
@@ -404,6 +574,7 @@ class MessageContent extends StatelessWidget {
                       Container(
                         // color: Colors.red,
                         child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
@@ -435,17 +606,35 @@ class MessageContent extends StatelessWidget {
                   alignment: Alignment.bottomCenter,
                   children: [
                     getContent(),
-                    Align(
-                      alignment: Alignment.bottomRight,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 4.0, right: 4.0),
+                    Positioned(
+                      // alignment: Alignment.bottomRight,
+                      right: 4.0,
+                      bottom: 3.0,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: widget.type == MessageType.image ||
+                                  widget.type == MessageType.values
+                              ? LinearGradient(
+                                  colors: [
+                                    Colors.black
+                                        .withOpacity(0.0), // Transparent black
+                                    Colors.black.withOpacity(
+                                        0.5), // Semi-transparent black
+                                    Colors.black
+                                        .withOpacity(1.0), // Opaque black
+                                  ],
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                )
+                              : null,
+                        ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
                               time,
                               style: TextStyle(
-                                color: Colors.grey[500],
+                                color: Colors.white,
                                 fontSize: 12.0,
                               ),
                             ),
@@ -533,9 +722,6 @@ class RepliedCard extends StatelessWidget {
         break;
     }
 
-    print(messageValue);
-    print(name);
-
     return InkWell(
       onTap: () {
         scrollTo(index);
@@ -567,6 +753,7 @@ class RepliedCard extends StatelessWidget {
                 ),
               ),
               Row(
+                // mainAxisSize: MainAxisSize.min,
                 children: [
                   icon != null
                       ? Padding(
@@ -582,6 +769,27 @@ class RepliedCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+IconData? getStatusIcon(MessageStatus status) {
+  switch (status) {
+    // switch (MessageStatus.seen) {
+    case MessageStatus.sending:
+      return Icons.access_time_outlined;
+
+    case MessageStatus.sent:
+      return Icons.check;
+
+    case MessageStatus.received:
+      return Icons.done_all_rounded;
+
+    case MessageStatus.seen:
+      // return Icons.remove_red_eye_rounded;
+      return Icons.done_all_rounded;
+
+    default:
+      return null;
   }
 }
 
@@ -896,15 +1104,16 @@ class _AudioMsgState extends State<AudioMsg> {
                           opacity: isDecibeled ? 0 : 1,
                           child: SliderTheme(
                             data: SliderThemeData(
-                                overlayShape: SliderComponentShape.noOverlay,
-                                thumbColor: Colors.green,
-                                thumbShape: RoundSliderThumbShape(
-                                  enabledThumbRadius: isDecibeled ? 10 : 5,
-                                ),
-                                valueIndicatorColor: Colors.lightGreenAccent,
-                                activeTrackColor: Colors.lightBlueAccent,
-                                trackShape: const RectangularSliderTrackShape(),
-                                trackHeight: 3.0),
+                              overlayShape: SliderComponentShape.noOverlay,
+                              thumbColor: Colors.green,
+                              thumbShape: RoundSliderThumbShape(
+                                enabledThumbRadius: isDecibeled ? 10 : 5,
+                              ),
+                              valueIndicatorColor: Colors.lightGreenAccent,
+                              activeTrackColor: Colors.lightBlueAccent,
+                              trackShape: const RectangularSliderTrackShape(),
+                              trackHeight: 3.0,
+                            ),
                             child: Slider(
                               min: 0,
                               max: audioDuration.inMilliseconds.toDouble() /
@@ -957,6 +1166,11 @@ class ImageMsg extends StatelessWidget {
 
     final chat = Provider.of<ChatHiveBox>(context).getChat(chatMsg.chatID)!;
 
+    // print(screenSize.width);
+    // print(screenSize.height);
+
+    // final fileDimension = getImageDimensions(path);
+
     return VideoImageFile(
       onPress: () {
         if (!Provider.of<Selection>(context, listen: false).selectionMode) {
@@ -975,12 +1189,27 @@ class ImageMsg extends StatelessWidget {
         tag: 'chatImage ${chatMsg.index}',
         child: Image.file(
           File(path),
+          fit: BoxFit.cover,
+          width: screenSize.width.toDouble() * 0.75,
+          height: 350,
         ),
       ),
       widget: widget,
     );
   }
 }
+
+// img.Image? getImageDimensions(String path) {
+//   final File file = File(path);
+//   final img.Image? image = img.decodeImage(file.readAsBytesSync());
+
+//   if (image != null) {
+//     print('Width: ${image.width}, Height: ${image.height}');
+//   } else {
+//     print('Unable to decode image.');
+//   }
+//   return image;
+// }
 
 class VideoMsg extends StatefulWidget {
   const VideoMsg({
@@ -996,40 +1225,46 @@ class VideoMsg extends StatefulWidget {
 
 class _VideoMsgState extends State<VideoMsg> {
   VideoPlayerController? videoPlayerController;
-
-  // bool isPlaying = false;
-
-  void initVideoPlayer() {
-    final chatMsg = widget.widget;
-
-    final path = chatMsg.filePath ?? '';
-
-    videoPlayerController = VideoPlayerController.file(File(path))
-      ..initialize().then((_) {
-        print('video player init completed');
-        // Ensure the first frame is shown after the video is initialized, even before the play button has been pressed.
-        setState(() {});
-      }).catchError((e) {
-        print(e);
-      });
-  }
+  String? thumbnailPath;
 
   @override
   void initState() {
-    initVideoPlayer();
     super.initState();
+    generateThumbnail();
   }
 
   @override
   void dispose() {
-    videoPlayerController!.dispose();
+    videoPlayerController?.dispose();
     super.dispose();
+  }
+
+  Future<void> generateThumbnail() async {
+    final chatMsg = widget.widget;
+    final path = chatMsg.filePath ?? '';
+
+    try {
+      final thumbPath = await VideoThumbnail.thumbnailFile(
+        video: path,
+        thumbnailPath: kTempDirectory.path,
+        imageFormat: ImageFormat.JPEG,
+        maxHeight: 1000, // specify the height of the thumbnail
+        quality: 100,
+      );
+
+      setState(() {
+        thumbnailPath = thumbPath;
+      });
+    } catch (e) {
+      print('Error generating thumbnail: $e');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final chatMsg = widget.widget;
     final chat = Provider.of<ChatHiveBox>(context).getChat(chatMsg.chatID)!;
+
     return VideoImageFile(
       onPress: () {
         if (!Provider.of<Selection>(context, listen: false).selectionMode) {
@@ -1048,15 +1283,19 @@ class _VideoMsgState extends State<VideoMsg> {
       widgetFile: Stack(
         alignment: Alignment.center,
         children: [
-          videoPlayerController!.value.isInitialized
+          thumbnailPath != null
               ? Hero(
                   tag: 'chatImage ${widget.widget.index}',
-                  child: AspectRatio(
-                    aspectRatio: videoPlayerController!.value.aspectRatio,
-                    child: VideoPlayer(videoPlayerController!),
+                  child: Image.file(
+                    File(thumbnailPath!),
+                    fit: BoxFit.cover,
+                    width: screenSize.width.toDouble() * 0.75,
+                    height: 350,
                   ),
                 )
-              : Container(),
+              : Container(
+                  color: Colors.black12,
+                ),
           const CircleAvatar(
             radius: 33,
             backgroundColor: Colors.black38,
@@ -1071,7 +1310,6 @@ class _VideoMsgState extends State<VideoMsg> {
     );
   }
 }
-
 // Upload & Download widgets
 
 class UploadableImage extends StatelessWidget {
@@ -1091,6 +1329,9 @@ class UploadableImage extends StatelessWidget {
         children: [
           Image.file(
             File(path),
+            fit: BoxFit.cover,
+            width: screenSize.width.toDouble() * 0.75,
+            height: 350,
           ),
           UploadButtonMedia(
             widget: widget,
@@ -1115,35 +1356,38 @@ class UploadableVideo extends StatefulWidget {
 }
 
 class _UploadableVideoState extends State<UploadableVideo> {
-  VideoPlayerController? videoPlayerController;
-
-  // bool isPlaying = false;
-
-  void initVideoPlayer() {
-    final chatMsg = widget.widget;
-
-    final path = chatMsg.filePath ?? '';
-
-    videoPlayerController = VideoPlayerController.file(File(path))
-      ..initialize().then((_) {
-        print('video player init completed');
-        // Ensure the first frame is shown after the video is initialized, even before the play button has been pressed.
-        setState(() {});
-      }).catchError((e) {
-        print(e);
-      });
-  }
+  String? thumbnailPath;
 
   @override
   void initState() {
-    initVideoPlayer();
     super.initState();
+    generateThumbnail();
   }
 
   @override
   void dispose() {
-    videoPlayerController!.dispose();
     super.dispose();
+  }
+
+  Future<void> generateThumbnail() async {
+    final chatMsg = widget.widget;
+    final path = chatMsg.filePath ?? '';
+
+    try {
+      final thumbPath = await VideoThumbnail.thumbnailFile(
+        video: path,
+        thumbnailPath: kTempDirectory.path,
+        imageFormat: ImageFormat.JPEG,
+        maxHeight: 1000, // specify a higher height for better quality
+        quality: 100, // set to maximum quality
+      );
+
+      setState(() {
+        thumbnailPath = thumbPath;
+      });
+    } catch (e) {
+      print('Error generating thumbnail: $e');
+    }
   }
 
   @override
@@ -1153,10 +1397,12 @@ class _UploadableVideoState extends State<UploadableVideo> {
       widgetFile: Stack(
         alignment: Alignment.center,
         children: [
-          videoPlayerController!.value.isInitialized
-              ? AspectRatio(
-                  aspectRatio: videoPlayerController!.value.aspectRatio,
-                  child: VideoPlayer(videoPlayerController!),
+          thumbnailPath != null
+              ? Image.file(
+                  File(thumbnailPath!),
+                  fit: BoxFit.cover,
+                  width: screenSize.width.toDouble() * 0.75,
+                  height: 350,
                 )
               : Container(),
           const CircleAvatar(
@@ -1177,7 +1423,9 @@ class _UploadableVideoState extends State<UploadableVideo> {
           ),
         ],
       ),
-      onPress: () {},
+      onPress: () {
+        // Add your onPress functionality here
+      },
     );
   }
 }
@@ -1525,6 +1773,9 @@ class DownloadableImage extends StatelessWidget {
         children: [
           Image.file(
             File(path),
+            fit: BoxFit.cover,
+            width: screenSize.width.toDouble() * 0.75,
+            height: 350,
           ),
           DownloadButtonMedia(
             widget: widget,
@@ -1554,6 +1805,9 @@ class DownloadableVideo extends StatelessWidget {
         children: [
           Image.file(
             File(path),
+            fit: BoxFit.cover,
+            width: screenSize.width.toDouble() * 0.75,
+            height: 350,
           ),
           const CircleAvatar(
             radius: 33.0,
@@ -1672,9 +1926,25 @@ class DownloadButtonMedia extends StatelessWidget {
               final downloadItem = provider.getDownloadItem(path);
               final isDownloading =
                   (downloadItem.status == DownloadStatus.downloading);
-              // final size = formatFileSize(downloadItem.file!.lengthSync());
-              final size = formatFileSize(widget.size!);
 
+              final file = downloadItem.file;
+              String size;
+              if (file == null) {
+                print('is null');
+                size = formatFileSize(widget.size!);
+              } else {
+                if (downloadItem.receivedBytes > 0) {
+                  print('is not null and not empty');
+                  size = formatFileSize(downloadItem.receivedBytes);
+                } else {
+                  print('is not null');
+                  size = formatFileSize(widget.size!);
+                }
+              }
+
+              // final size = formatFileSize(widget.size!);
+
+              print(downloadItem.file);
               final progress = downloadItem.progress;
               return !isDownloading
                   ? Padding(
@@ -1837,8 +2107,15 @@ class UploadButtonMedia extends StatelessWidget {
             builder: (context, provider, child) {
               final uploadItem = provider.getUploadItem(path);
               final isUploading = uploadItem.uploadStatus == 'Uploading';
-              final size = formatFileSize(uploadItem.file.lengthSync());
+              final length =
+                  uploadItem.file.lengthSync() - uploadItem.initOffset;
+              final size = formatFileSize(length);
               final progress = uploadItem.uploadProgress;
+
+              print('path: $path');
+              print('isUploading: $isUploading');
+              print('UploadItem: ${uploadItem.initOffset}');
+
               return !isUploading
                   ? Padding(
                       padding: const EdgeInsets.all(8.0),
@@ -1905,21 +2182,27 @@ class VideoImageFile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 2.0),
-          child: GestureDetector(
-            onTap: onPress,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8.0),
-              child: widgetFile,
+    return SizedBox(
+      width: 400,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.only(bottom: 2.0),
+            constraints: BoxConstraints(
+              maxHeight: 400,
+            ),
+            child: GestureDetector(
+              onTap: onPress,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8.0),
+                child: widgetFile,
+              ),
             ),
           ),
-        ),
-        TextContent(message: widget.message)
-      ],
+          TextContent(message: widget.message)
+        ],
+      ),
     );
   }
 }

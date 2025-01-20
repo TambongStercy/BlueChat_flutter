@@ -68,7 +68,7 @@ class _NewGroupInfoState extends State<NewGroupInfo> {
             Navigator.popUntil(context, (route) {
               return count++ == 2;
             });
-          } on Exception catch (e) {
+          } catch (e) {
             print(e);
           }
         },

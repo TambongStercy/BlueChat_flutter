@@ -5,18 +5,27 @@ import 'package:blue_chat_v1/classes/chat.dart';
 import 'package:blue_chat_v1/classes/chat_hive_box.dart';
 import 'package:blue_chat_v1/classes/level_hive_box.dart';
 import 'package:blue_chat_v1/classes/levels.dart';
+import 'package:blue_chat_v1/classes/message.dart';
 // import 'package:blue_chat_v1/classes/message.dart';
 import 'package:blue_chat_v1/classes/user_hive_box.dart';
 import 'package:blue_chat_v1/constants.dart';
+import 'package:blue_chat_v1/providers/file_download.dart';
+import 'package:blue_chat_v1/providers/file_upload.dart';
+import 'package:blue_chat_v1/providers/socket_io.dart';
 // import 'package:blue_chat_v1/screens/chat_screen.dart';
 import 'package:blue_chat_v1/screens/chats.dart';
 import 'package:blue_chat_v1/screens/pdf_reader.dart';
 import 'package:blue_chat_v1/screens/pp_uploading.dart';
+import 'package:blue_chat_v1/screens/welcome_screen.dart';
+import 'package:blue_chat_v1/services/notification_service.dart';
+import 'package:blue_chat_v1/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+
+bool isNewUser = false;
 
 Future<void> signup({
   required BuildContext context,
@@ -28,10 +37,17 @@ Future<void> signup({
   try {
     final chatBox = Provider.of<ChatHiveBox>(context, listen: false);
 
+    final fcmToken = await PushNotifications.getDeviceToken() ?? '';
+
+    // if (fcmToken == null) {
+    //   return print('fcm token is null');
+    // }
+
     final body = {
       'username': name,
       'email': email,
       'password': password,
+      'fcmToken': fcmToken,
     };
 
     final response = await http.post(url, body: body);
@@ -43,28 +59,32 @@ Future<void> signup({
     if (response.statusCode == 200) {
       final id = data['userInfo']['id'];
       // ignore: use_build_context_synchronously
-      Provider.of<UserHiveBox>(context, listen: false).saveToken(token);
+
+      print('TOKEN AFTER SIGNUP: $token');
 
       await chatBox.emptyBox();
 
       // ignore: use_build_context_synchronously
-      Provider.of<UserHiveBox>(context, listen: false).updateUser(
+      await Provider.of<UserHiveBox>(context, listen: false).updateUser(
         id: id,
         name: name,
         email: email,
         avatar: '',
       );
 
+      await Provider.of<UserHiveBox>(context, listen: false).saveToken(token);
+
+      isNewUser = true;
+
       // ignore: use_build_context_synchronously
-      Navigator.pushNamed(context, PpUpload.id);
+      popUntilAndPush(context, PpUpload.id);
     } else {
       print('request failed with status: ${response.statusCode}');
     }
     // ignore: use_build_context_synchronously
     showPopupMessage(context, message);
-  } on Exception catch (e) {
+  } catch (e) {
     print(e);
-    // TODO
   }
 }
 
@@ -75,15 +95,16 @@ Future<void> login({
 }) async {
   final url = Uri.parse('$kServerURL/user/login');
 
-  print('#');
-
   // ignore: use_build_context_synchronously
   final userBox = Provider.of<UserHiveBox>(context, listen: false);
   final chatBox = Provider.of<ChatHiveBox>(context, listen: false);
 
+  final fcmToken = await PushNotifications.getDeviceToken() ?? '';
+
   final body = {
     'email': email,
     'password': password,
+    'fcmToken': fcmToken,
   };
 
   final response = await http.post(url, body: body);
@@ -103,11 +124,6 @@ Future<void> login({
     final avatar = userInfo['avatar'];
     final id = userInfo['id'];
 
-    print('userID: $id');
-
-    await userBox.saveToken(token);
-
-    // ignore: use_build_context_synchronously
     await userBox.updateUser(
       id: id,
       name: username,
@@ -115,17 +131,19 @@ Future<void> login({
       avatar: getMobilePath(avatar),
     );
 
+    await userBox.saveToken(token);
+
+    isNewUser = true;
+
     // ignore: use_build_context_synchronously
-    showPopupMessage(context, 'Searching for your chats\n ...');
+    showPopupMessage(
+        context, 'Welcome $username, searching for your chats\n ...');
     await chatBox.emptyBox();
 
-    Provider.of<SocketIo>(context, listen: false).context = (context);
+    // Provider.of<SocketIo>(context, listen: false).context = (context);
 
     // ignore: use_build_context_synchronously
-    await getUserChats(context: context);
-
-    // ignore: use_build_context_synchronously
-    Navigator.pushNamed(context, ChatsScreen.id);
+    popUntilAndPush(context, ChatsScreen.id);
   } else {
     print('request failed with status: ${response.statusCode}');
 
@@ -155,30 +173,30 @@ Future<void> getUserChats({required BuildContext context}) async {
   final data = json.decode(response.body);
   final token = data['token'] ?? userBox.token;
   final chatsJson = data['userChats'] ?? [];
-  final String avatar64 = data['avatar64'];
+  final String avatar64 = data['avatar64'] ?? '';
 
   userBox.saveToken(token);
-
-  print(chatsJson);
-  print(avatar64);
-  print(data);
-  print(response.toString());
+  Provider.of<SocketIo>(context, listen: false).token = token;
 
   final ppFile = File(avatar);
 
   if (!ppFile.existsSync()) {
+    ppFile.createSync(recursive: true);
     final Uint8List bytes = base64Decode(avatar64);
     ppFile.writeAsBytesSync(bytes);
   }
 
   if (response.statusCode == 200) {
+    Provider.of<SocketIo>(context, listen: false).connectSocket(context);
     for (final chatJson in chatsJson) {
-      print(chatJson);
       final chat = Chat.fromJson(chatJson, context);
       await chatBox.addUpdateChat(chat);
     }
 
-    // Navigator.pushNamed(context, ChatsScreen.id);
+    Provider.of<FileUploadProvider>(context, listen: false).resetUploadItems();
+    Provider.of<DownloadProvider>(context, listen: false).resetDownloadItems();
+
+    isNewUser = false;
   } else {
     print('request failed with status: ${response.statusCode}');
 
@@ -195,6 +213,8 @@ Future<void> uploadPP({
 
   final currentToken = userBox.token;
   final localEmail = userBox.email;
+
+  print(currentToken);
 
   final url = Uri.parse('$kServerURL/user/upload-avatar?email=$localEmail');
 
@@ -290,14 +310,9 @@ Future<void> downloadAvatar({
       // Handle errors, e.g., image not found
       print('Image request failed with status code ${response.statusCode}');
     }
-  } on Exception catch (e) {
+  } catch (e) {
     print(e);
   }
-}
-
-void restartApp() {
-  // Send a signal to the Flutter framework to restart the app
-  SystemChannels.platform.invokeMethod('SystemNavigator.pop');
 }
 
 Future<void> logout({required BuildContext context}) async {
@@ -310,6 +325,8 @@ Future<void> logout({required BuildContext context}) async {
     final currentToken = userBox.token;
     final email = userBox.email;
 
+    final fcmToken = await PushNotifications.getDeviceToken() ?? '';
+
     final headers = {
       'Authorization': 'Bearer $currentToken',
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -317,6 +334,7 @@ Future<void> logout({required BuildContext context}) async {
 
     final body = {
       'email': email,
+      'fcmToken': fcmToken,
     };
 
     final response = await http.post(url, headers: headers, body: body);
@@ -330,9 +348,11 @@ Future<void> logout({required BuildContext context}) async {
 
       // ignore: use_build_context_synchronously
       showPopupMessage(context, '$email logged out successfully');
+
       // ignore: use_build_context_synchronously
       Provider.of<SocketIo>(context, listen: false).disconnect();
-      restartApp();
+
+      popUntilAndPush(context, WelcomeScreen.id);
     } else {
       print('request failed with status: ${response.statusCode}');
 
@@ -516,7 +536,7 @@ Future<void> uploadQuestion({
     }
     // ignore: use_build_context_synchronously
     showPopupMessage(context, message);
-  } on Exception catch (e) {
+  } catch (e) {
     print(e);
   }
 }
@@ -667,7 +687,7 @@ Future<void> createCourse({
     }
     // ignore: use_build_context_synchronously
     showPopupMessage(context, message);
-  } on Exception catch (e) {
+  } catch (e) {
     print(e);
   }
 }
@@ -733,7 +753,7 @@ Future<void> createGroup({
     }
     // ignore: use_build_context_synchronously
     showPopupMessage(context, message);
-  } on Exception catch (e) {
+  } catch (e) {
     print(e);
   }
 }
@@ -784,7 +804,7 @@ Future<void> exitGroup({
     }
     // ignore: use_build_context_synchronously
     showPopupMessage(context, message);
-  } on Exception catch (e) {
+  } catch (e) {
     print(e);
   }
 }
@@ -949,7 +969,7 @@ Future<void> changeGroupDescription({
   }
 }
 
-Future<void> changeGroupOnlyAdlin({
+Future<void> changeGroupOnlyAdmin({
   required BuildContext context,
   required String groupId,
   required bool onlyAdmins,
@@ -1047,5 +1067,238 @@ Future<void> makeParticipantsAdmin({
     print('request failed with status: ${response.statusCode}');
     // ignore: use_build_context_synchronously
     showPopupMessage(context, message);
+  }
+}
+
+Future<void> removeParticipantsAdmin({
+  required BuildContext context,
+  required String groupId,
+  required List<String> admins,
+}) async {
+  final userBox = Provider.of<UserHiveBox>(context, listen: false);
+  final chatBox = Provider.of<ChatHiveBox>(context, listen: false);
+
+  final currentToken = userBox.token;
+  final localEmail = userBox.email;
+
+  final url =
+      Uri.parse('$kServerURL/user/group/remove-admins/?email=$localEmail');
+
+  final body = {
+    'groupID': groupId,
+    'participants': jsonEncode(admins),
+  };
+  final headers = {
+    'Authorization': 'Bearer $currentToken',
+    'Content-Type': 'application/x-www-form-urlencoded',
+  };
+  final response = await http.post(
+    url,
+    body: body,
+    headers: headers,
+  );
+
+  final data = json.decode(response.body);
+
+  final token = data['token'] ?? currentToken;
+  final message = data['message'] ?? '';
+
+  userBox.saveToken(token);
+
+  if (response.statusCode == 200) {
+    print(
+        'group participants were successfully removed from their post of admin');
+
+    final group = chatBox.getChat(groupId)!;
+
+    group.removeAdmins(chats: admins, adminId: userBox.id);
+
+    // ignore: use_build_context_synchronously
+    showPopupMessage(context, message);
+  } else {
+    print('request failed with status: ${response.statusCode}');
+    // ignore: use_build_context_synchronously
+    showPopupMessage(context, message);
+  }
+}
+
+//API in background
+Future<void> sendMessageAPI({
+  required MessageModel message,
+  required UserHiveBox userBox,
+  required String chatID,
+}) async {
+  final currentToken = userBox.token;
+  final localEmail = userBox.email;
+
+  final url = Uri.parse('$kServerURL/user/message?email=$localEmail');
+
+  final msg = message.message;
+  final date = message.date.toIso8601String();
+  final msgID = message.id;
+  final type = getMessageTypeString(message.type);
+  final mobilePath = message.filePath;
+  final path = mobilePath == null ? null : getServerPath(mobilePath);
+  final size = message.size;
+  final fileName = path?.split('/').last;
+  final decibels = message.decibels;
+  final repliedToId = message.repliedToId;
+
+  final data = {
+    'msgID': msgID,
+    'chatID': chatID,
+    'msg': msg,
+    'date': date,
+    'type': type,
+    'file': {
+      'path': path,
+      'size': size,
+      'name': fileName,
+      'decibels': decibels,
+      'repliedToId': repliedToId,
+    },
+  };
+
+  final response = await http.post(
+    url,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $currentToken',
+    },
+    body: json.encode(data),
+  );
+
+  final decodedData = json.decode(response.body);
+
+  final token = decodedData['token'] ?? currentToken;
+
+  print(token);
+
+  await userBox.saveToken(token);
+
+  if (response.statusCode == 200) {
+    print('Message sent successfully');
+  } else {
+    print('Failed to send message: ${response.body}');
+  }
+}
+
+Future<void> messageRecievedAPI({
+  required String messageID,
+  required UserHiveBox userBox,
+  required String chatID,
+}) async {
+  final currentToken = userBox.token;
+  final localEmail = userBox.email;
+
+  final url = Uri.parse('$kServerURL/user/msg-received?email=$localEmail');
+
+  final data = {
+    'chatID': chatID,
+    'messageID': messageID,
+  };
+
+  final response = await http.post(
+    url,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $currentToken',
+    },
+    body: json.encode(data),
+  );
+
+  final decodedData = json.decode(response.body);
+
+  final token = decodedData['token'] ?? currentToken;
+
+  userBox.saveToken(token);
+
+  if (response.statusCode == 200) {
+    print('Message sent successfully');
+  } else {
+    print('Failed to send message: ${response.body}');
+  }
+}
+
+Future<void> messageSeenAPI({
+  required String messageID,
+  required UserHiveBox userBox,
+  required String chatID,
+}) async {
+  final currentToken = userBox.token;
+  final localEmail = userBox.email;
+
+  final url = Uri.parse('$kServerURL/user/msgs-seen?email=$localEmail');
+
+  final data = {
+    'chatID': chatID,
+    'messageID': messageID,
+  };
+
+  final response = await http.post(
+    url,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $currentToken',
+    },
+    body: json.encode(data),
+  );
+
+  final decodedData = json.decode(response.body);
+
+  final token = decodedData['token'] ?? currentToken;
+
+  userBox.saveToken(token);
+
+  if (response.statusCode == 200) {
+    print('Message sent successfully');
+  } else {
+    print('Failed to send message: ${response.body}');
+  }
+}
+
+Future<bool> removeEventFromNotif({
+  required String event,
+  required String data,
+  required String initiatorID,
+  required UserHiveBox userBox,
+}) async {
+  try {
+    final currentToken = userBox.token;
+    final localEmail = userBox.email;
+
+    final url = Uri.parse('$kServerURL/user/remove-event?email=$localEmail');
+
+    final dataSend = {
+      'event': event,
+      'data': data,
+      'initiatorID': initiatorID,
+    };
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $currentToken',
+      },
+      body: json.encode(dataSend),
+    );
+
+    final decodedData = json.decode(response.body);
+
+    final token = decodedData['token'] ?? currentToken;
+
+    userBox.saveToken(token);
+
+    if (response.statusCode == 200) {
+      print('Successfully removed event from notification');
+      return true;
+    } else {
+      print('Failed to remove event: ${response.body}');
+      return false;
+    }
+  } catch (e) {
+    print('Failed to remove event: $e');
+    return false;
   }
 }

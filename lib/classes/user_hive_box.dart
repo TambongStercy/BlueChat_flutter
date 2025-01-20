@@ -28,7 +28,11 @@ class UserHiveBox extends ChangeNotifier {
 
   String get token {
     final values = box.get('values');
-    return values['token'];
+    return values?['token']??'';
+  }
+
+  Future<void> closeBox() async {
+    await box.close();
   }
 
   Future<void> saveToken(token) async {
@@ -42,6 +46,7 @@ class UserHiveBox extends ChangeNotifier {
         'token': token,
       },
     );
+
     // notifyListeners();
   }
 
@@ -51,6 +56,7 @@ class UserHiveBox extends ChangeNotifier {
     email,
     avatar,
   }) async {
+    print('Putting ID: $id, name: $name, email: $email, avatar: $avatar');
     await box.put(
       'values',
       {
@@ -61,6 +67,10 @@ class UserHiveBox extends ChangeNotifier {
         'token': token,
       },
     );
+
+    
+    print('user info saved');
+    print(box.get('values'));
   }
 
   Future<void> logoutUser() async {

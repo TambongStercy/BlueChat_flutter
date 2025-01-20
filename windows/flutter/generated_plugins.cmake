@@ -6,6 +6,7 @@ list(APPEND FLUTTER_PLUGIN_LIST
   audioplayers_windows
   emoji_picker_flutter
   file_selector_windows
+  firebase_core
   permission_handler_windows
   share_plus
   syncfusion_pdfviewer_windows

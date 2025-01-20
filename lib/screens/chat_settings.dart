@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:audioplayers/audioplayers.dart';
@@ -15,13 +14,12 @@ import 'package:blue_chat_v1/screens/chat_screen.dart';
 import 'package:blue_chat_v1/screens/chats.dart';
 import 'package:blue_chat_v1/screens/mediafiles_slider_screen.dart';
 import 'package:blue_chat_v1/screens/profile_picture.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:mime/mime.dart';
 import 'package:open_file/open_file.dart';
 import 'package:provider/provider.dart';
-import 'package:video_player/video_player.dart';
+import 'package:video_thumbnail/video_thumbnail.dart';
 
 class ChatSetting extends StatefulWidget {
   const ChatSetting({super.key, required this.chat});
@@ -70,51 +68,12 @@ class _ChatSettingState extends State<ChatSetting>
 
       final String lastSeen = chat.isGroup
           ? chat.getParticipantsNames(context)
-          : chat.formatedLastSeen();
+          : Provider.of<CurrentChat>(context, listen: false).lastSeen;
 
       final int pages = isGroup ? 4 : 3;
 
       _tabController =
           TabController(length: pages, vsync: this, initialIndex: 0);
-
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        final List<MessageModel> medias = [];
-        final List<MessageModel> _message = Provider.of<CurrentChat>(
-          context,
-          listen: false,
-        ).openedChat!.messages;
-        int count = 0;
-
-        //for pageviewing just live it like this
-        for (MessageModel message in _message) {
-          final file = File(message.filePath ?? '');
-          if ((message.type == MessageType.image ||
-                  message.type == MessageType.video) &&
-              file.existsSync()) {
-            // final id = _message.indexOf(message);
-
-            final msg = MessageModel(
-              id: message.id,
-              date: message.date,
-              sender: message.sender,
-              chatID: chat.id,
-              message: message.message,
-              time: message.time,
-              isMe: message.isMe,
-              type: message.type,
-              filePath: message.filePath,
-              index: count,
-              status: MessageStatus.sending,
-            );
-            count++;
-
-            medias.add(msg);
-          }
-        }
-        print('Bingo');
-
-        medias.length = 0;
-      });
 
       final userID = Provider.of<UserHiveBox>(context, listen: false).id;
 
@@ -124,25 +83,8 @@ class _ChatSettingState extends State<ChatSetting>
       final bool isGroupAdmin = chat.isGroupAdmin(userID);
       final bool isOnlyAdmin = chat.onlyAdmins ?? false;
       final avatarUrl = chat.avatar;
-      final hasPP = avatarUrl != 'default.png';
 
       final ppFile = File(avatarUrl);
-
-      MemoryImage? decodedImage;
-
-      if (chat.avatarBuffer == null) {
-        print('avatarBuffer: null');
-      }
-
-      if (chat.avatarBuffer != null && hasPP) {
-        final Uint8List decodedImageBytes = base64Decode(chat.avatarBuffer!);
-        decodedImage = MemoryImage(decodedImageBytes);
-      }
-
-      if (!ppFile.existsSync() && hasPP) {
-        //download image
-        downloadAvatar(context: context, chat: chat);
-      }
 
       final CircleAvatar ppWidget;
       if (ppFile.existsSync()) {
@@ -151,25 +93,20 @@ class _ChatSettingState extends State<ChatSetting>
           radius: 60.0,
         );
       } else {
-        ppWidget = !hasPP
-            ? !isGroup
-                ? const CircleAvatar(
-                    backgroundImage: AssetImage('assets/images/user1.png'),
-                    radius: 60.0,
-                  )
-                : CircleAvatar(
-                    radius: 60.0,
-                    backgroundColor: Colors.blueGrey[200],
-                    child: SvgPicture.asset(
-                      "assets/svg/groups.svg",
-                      color: Colors.white,
-                      height: 60.0,
-                      width: 60.0,
-                    ),
-                  )
-            : CircleAvatar(
-                backgroundImage: decodedImage!,
+        ppWidget = !isGroup
+            ? const CircleAvatar(
+                backgroundImage: AssetImage('assets/images/user1.png'),
                 radius: 60.0,
+              )
+            : CircleAvatar(
+                radius: 60.0,
+                backgroundColor: Colors.blueGrey[200],
+                child: SvgPicture.asset(
+                  "assets/svg/groups.svg",
+                  color: Colors.white,
+                  height: 60.0,
+                  width: 60.0,
+                ),
               );
       }
 
@@ -283,6 +220,9 @@ class _ChatSettingState extends State<ChatSetting>
                                             SlideRightToLeftPageRoute(
                                               builder: (context) => ChatScreen(
                                                 chat: chat,
+                                              ),
+                                              routeSettings: RouteSettings(
+                                                name: ChatScreen.id,
                                               ),
                                             ),
                                           ).then((value) => setState(() => {}));
@@ -490,9 +430,13 @@ class _ChatSettingState extends State<ChatSetting>
                       elevation: 1.0,
                       color: Colors.white,
                       child: ListTile(
-                        onTap: () {
-                          chat.changeAdminOnlyTo(!isOnlyAdmin);
-                          setState(() {});
+                        onTap: () async {
+                          await changeGroupOnlyAdmin(
+                            context: context,
+                            groupId: chat.id,
+                            onlyAdmins: !isOnlyAdmin,
+                          );
+                          if (mounted) setState(() {});
                         },
                         title: const Text('Only admins can send messages'),
                         subtitle: Text(isOnlyAdmin ? 'ON' : 'OFF'),
@@ -821,8 +765,17 @@ class _ChatSettingState extends State<ChatSetting>
     }
   }
 
-  Future<dynamic> actionOnMember(BuildContext context, Chat thisParticipant,
-      Chat? chat, UserHiveBox user) {
+  Future<dynamic> actionOnMember(
+    BuildContext context,
+    Chat thisParticipant,
+    Chat? chat,
+    UserHiveBox user,
+  ) {
+    final chatIsAdmin = chat!.isGroupAdmin(
+      thisParticipant.id,
+    );
+    final userIsAdmin = chat.isGroupAdmin(user.id);
+
     return showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -846,11 +799,6 @@ class _ChatSettingState extends State<ChatSetting>
                   ],
                 ),
                 onPressed: () {
-                  Provider.of<CurrentChat>(
-                    context,
-                    listen: false,
-                  ).empty();
-
                   Chat chat = Provider.of<ChatHiveBox>(
                     context,
                     listen: false,
@@ -859,6 +807,10 @@ class _ChatSettingState extends State<ChatSetting>
                   Navigator.popUntil(context, (route) {
                     if (route.settings.name == ChatsScreen.id) {
                       // navigate to selected chat screen
+                      Provider.of<CurrentChat>(
+                        context,
+                        listen: false,
+                      ).addChat(chat);
 
                       Navigator.push(
                         context,
@@ -868,6 +820,9 @@ class _ChatSettingState extends State<ChatSetting>
                               chat: chat,
                             );
                           },
+                          settings: const RouteSettings(
+                            name: ChatScreen.id,
+                          ),
                         ),
                       );
 
@@ -877,7 +832,7 @@ class _ChatSettingState extends State<ChatSetting>
                   });
                 },
               ),
-              if (chat!.isGroupAdmin(user.id))
+              if (userIsAdmin)
                 TextButton(
                   child: Row(
                     children: [
@@ -898,7 +853,59 @@ class _ChatSettingState extends State<ChatSetting>
                       );
 
                       Navigator.pop(context);
-                    } on Exception catch (e) {
+                    } catch (e) {
+                      print(e);
+                    }
+                  },
+                ),
+              if (userIsAdmin)
+                TextButton(
+                  child: Row(
+                    children: [
+                      const SizedBox(width: 15.0),
+                      Text(
+                        'Make ${thisParticipant.name} admin',
+                      ),
+                    ],
+                  ),
+                  onPressed: () async {
+                    try {
+                      final groupId = chat.id;
+
+                      await makeParticipantsAdmin(
+                        context: context,
+                        groupId: groupId,
+                        newAdmins: [thisParticipant.id],
+                      );
+
+                      Navigator.pop(context);
+                    } catch (e) {
+                      print(e);
+                    }
+                  },
+                ),
+              if (userIsAdmin && chatIsAdmin)
+                TextButton(
+                  child: const Row(
+                    children: [
+                      SizedBox(width: 15.0),
+                      Text(
+                        'Remove from post of admin',
+                      ),
+                    ],
+                  ),
+                  onPressed: () async {
+                    try {
+                      final groupId = chat.id;
+
+                      await removeParticipantsAdmin(
+                        context: context,
+                        groupId: groupId,
+                        admins: [thisParticipant.id],
+                      );
+
+                      Navigator.pop(context);
+                    } catch (e) {
                       print(e);
                     }
                   },
@@ -984,7 +991,7 @@ class _ChangeGroupDescriptionState extends State<ChangeGroupDescription> {
   @override
   Widget build(BuildContext context) {
     final group = widget.group;
-    final userID = widget.userID;
+    final groupId = group.id;
     return Container(
       padding: const EdgeInsets.all(16.0),
       decoration: const BoxDecoration(
@@ -1076,8 +1083,10 @@ class _ChangeGroupDescriptionState extends State<ChangeGroupDescription> {
             ),
             onPressed: () {
               final description = _editingController.value.text;
-              group.changeDescription(
-                  newDescription: description, adminId: userID);
+
+              changeGroupDescription(
+                  context: context, groupId: groupId, description: description);
+
               Navigator.pop(context);
             },
             child: const Text(
@@ -1093,6 +1102,7 @@ class _ChangeGroupDescriptionState extends State<ChangeGroupDescription> {
   }
 }
 
+
 class MediaGrid extends StatefulWidget {
   MediaGrid({required this.msg, required this.chat, required this.index});
 
@@ -1105,56 +1115,65 @@ class MediaGrid extends StatefulWidget {
 }
 
 class _MediaGridState extends State<MediaGrid> {
-  VideoPlayerController? videoPlayerController;
-
-  void initVideoPlayer() {
-    videoPlayerController =
-        VideoPlayerController.file(File(widget.msg.filePath!))
-          ..initialize().then((_) {
-            print('video player init completed');
-            // Ensure the first frame is shown after the video is initialized, even before the play button has been pressed.
-            setState(() {});
-          }).catchError((e) {
-            print(e);
-          });
-  }
+  String? thumbnailPath;
 
   @override
   void initState() {
-    if (widget.msg.type == MessageType.video) {
-      initVideoPlayer();
-    }
     super.initState();
+    if (widget.msg.type == MessageType.video) {
+      generateThumbnail();
+    }
   }
 
   @override
   void dispose() {
-    if (widget.msg.type == MessageType.video) {
-      videoPlayerController!.dispose();
-    }
     super.dispose();
   }
+
+  Future<void> generateThumbnail() async {
+    final path = widget.msg.filePath ?? '';
+
+    try {
+      final thumbPath = await VideoThumbnail.thumbnailFile(
+        video: path,
+        thumbnailPath: kTempDirectory.path,
+        imageFormat: ImageFormat.JPEG,
+        maxHeight: 1000, // specify a higher height for better quality
+        quality: 100, // set to maximum quality
+      );
+
+      setState(() {
+        thumbnailPath = thumbPath;
+      });
+    } catch (e) {
+      print('Error generating thumbnail: $e');
+    }
+  }
+
 
   Widget getContent() {
     if (widget.msg.type == MessageType.image) {
       return Hero(
-        tag: 'chatImage ${widget.msg.index}',
+        tag: 'chatImage ${widget.msg.id}',
         child: Container(
           color: Colors.black,
           child: Image.file(
             File(widget.msg.filePath!),
+            fit: BoxFit.cover,
           ),
         ),
       );
     } else if (widget.msg.type == MessageType.video) {
       return Hero(
-        tag: 'chatImage ${widget.msg.index}',
+        tag: 'chatImage ${widget.msg.id}',
         child: Container(
           color: Colors.black,
-          child: AspectRatio(
-            aspectRatio: videoPlayerController!.value.aspectRatio,
-            child: VideoPlayer(videoPlayerController!),
-          ),
+          child: thumbnailPath != null
+              ? Image.file(
+                  File(thumbnailPath!),
+                  fit: BoxFit.cover,
+                )
+              : Container(),
         ),
       );
     } else {

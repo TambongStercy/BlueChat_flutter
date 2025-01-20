@@ -1,40 +1,42 @@
-// import 'dart:io';
+import 'dart:io';
 
-// import 'package:hive/hive.dart';
+import 'package:hive/hive.dart';
 
-// part 'upload_item.g.dart';
+part 'upload_item.g.dart'; // Hive Type Adapter Generator
 
-// @HiveType(typeId: 0)
-// class UploadItem extends HiveObject {
-//   @HiveField(0)
-//   String? selectedFilePath;
+@HiveType(typeId: 1)
+class UploadItem extends HiveObject {
+  @HiveField(0)
+  String? selectedFilePath;
 
-//   @HiveField(1)
-//   double uploadProgress = 0.0;
+  @HiveField(1)
+  double uploadProgress;
 
-//   @HiveField(2)
-//   String uploadStatus = '';
+  @HiveField(2)
+  String uploadStatus;
 
-//   @HiveField(3)
-//   bool uploadPaused = false;
+  @HiveField(3)
+  bool uploadPaused;
 
-//   @HiveField(4)
-//   int initOffset = 0;
+  @HiveField(4)
+  int initOffset;
 
-//   @HiveField(5)
-//   String fileId = '';
+  @HiveField(5)
+  String fileId;
 
-//   @HiveField(6)
-//   late String name;
+  @HiveField(6)
+  late String name;
 
-  
-//   late File file;
+  @HiveField(7)
+  late File file;
 
-//   // You don't need to store the 'file' property in Hive, as it's not serializable.
-//   // You can recreate it when needed using 'selectedFilePath'.
-
-//   UploadItem({required this.selectedFilePath}) {
-//     file = File(selectedFilePath!);
-//     name = selectedFilePath!.split('/').last;
-//   }
-// }
+  UploadItem({required this.selectedFilePath})
+      : uploadProgress = 0.0,
+        uploadStatus = '',
+        uploadPaused = false,
+        initOffset = 0,
+        fileId = '' {
+    file = File(selectedFilePath!);
+    name = file.path.split('/').last;
+  }
+}
